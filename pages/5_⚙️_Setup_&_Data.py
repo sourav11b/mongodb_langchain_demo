@@ -31,33 +31,9 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Environment Check ──────────────────────────────────────────────────────────
-st.markdown("### 🔧 Environment Configuration")
-
 from config import (MONGODB_URI, MONGODB_DB_NAME, AZURE_OPENAI_API_KEY,
                     AZURE_OPENAI_ENDPOINT, VOYAGE_API_KEY, LANGCHAIN_API_KEY,
                     MCP_SERVER_URL, VOYAGE_MODEL, AZURE_OPENAI_DEPLOYMENT)
-
-checks = [
-    ("MongoDB URI",          bool(MONGODB_URI and "mongodb" in MONGODB_URI),     MONGODB_URI[:40] + "..."),
-    ("MongoDB Database",     bool(MONGODB_DB_NAME),                               MONGODB_DB_NAME),
-    ("Azure OpenAI Key",     bool(AZURE_OPENAI_API_KEY),                          "***" + AZURE_OPENAI_API_KEY[-4:] if AZURE_OPENAI_API_KEY else "NOT SET"),
-    ("Azure OpenAI Endpoint",bool(AZURE_OPENAI_ENDPOINT),                         AZURE_OPENAI_ENDPOINT[:40] + "..." if AZURE_OPENAI_ENDPOINT else "NOT SET"),
-    ("Azure Deployment",     bool(AZURE_OPENAI_DEPLOYMENT),                       AZURE_OPENAI_DEPLOYMENT),
-    ("Voyage AI Key",        bool(VOYAGE_API_KEY),                                "***" + VOYAGE_API_KEY[-4:] if VOYAGE_API_KEY else "NOT SET"),
-    ("Voyage Model",         bool(VOYAGE_MODEL),                                  VOYAGE_MODEL),
-    ("LangSmith Key",        bool(LANGCHAIN_API_KEY),                             "***" + LANGCHAIN_API_KEY[-4:] if LANGCHAIN_API_KEY else "NOT SET (optional)"),
-    ("MCP Server URL",       bool(MCP_SERVER_URL),                                MCP_SERVER_URL),
-]
-
-col1, col2 = st.columns(2)
-for i, (name, ok, val) in enumerate(checks):
-    target = col1 if i % 2 == 0 else col2
-    with target:
-        icon = "✅" if ok else "❌"
-        st.markdown(f"{icon} **{name}**: `{val}`")
-
-st.markdown("---")
 
 # ── Database Stats ─────────────────────────────────────────────────────────────
 st.markdown("### 📊 MongoDB Collection Stats")
