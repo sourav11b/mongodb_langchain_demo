@@ -3,8 +3,11 @@ Page 2: Fraud Intelligence — Autonomous Multi-Step Fraud Detection Agent
 """
 
 import streamlit as st
-import sys, os
+import sys, os, logging
+from datetime import datetime, timedelta, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+logger = logging.getLogger("vaultiq.page.fraud")
 
 st.set_page_config(page_title="Fraud Intelligence | VaultIQ", page_icon="🚨", layout="wide")
 
@@ -47,6 +50,210 @@ st.markdown("""
   </p>
 </div>
 """, unsafe_allow_html=True)
+
+# ── Fraud Scenario Injection (Sidebar) ─────────────────────────────────────────
+from pymongo import MongoClient
+from config import MONGODB_URI, MONGODB_DB_NAME
+
+_inject_db = MongoClient(MONGODB_URI)[MONGODB_DB_NAME]
+_INJECT_TAG = "_injected_scenario"     # tag field for cleanup
+
+def _now(**kw):
+    return datetime.now(timezone.utc) + timedelta(**kw)
+
+FRAUD_SCENARIOS = {
+    "🛒 Card-Not-Present Burst": {
+        "id": "cnp_burst",
+        "desc": "8 rapid online transactions across 5 countries in 20 minutes — classic CNP fraud.",
+        "cardholder_id": "CH_DEMO_CNP_001",
+        "cardholders": [{
+            "cardholder_id": "CH_DEMO_CNP_001", "name": "Marcus Webb",
+            "card_tier": "Platinum", "kyc_verified": True, "pep_flag": False,
+            "home_city": "New York", "risk_score": 0.82, "annual_spend_usd": 48000,
+        }],
+        "transactions": lambda: [
+            {"cardholder_id": "CH_DEMO_CNP_001", "amount": a, "merchant_name": m,
+             "channel": "online", "ip_country": c, "fraud_score": s,
+             "is_flagged": True, "status": st_, "timestamp": _now(minutes=-i*3)}
+            for i, (a, m, c, s, st_) in enumerate([
+                (4999, "ElectroMax Global", "Nigeria", 0.97, "declined"),
+                (3200, "LuxBags24.com", "Romania", 0.94, "declined"),
+                (1850, "TechVault UK", "UK", 0.91, "approved"),
+                (2400, "DigiStore DE", "Germany", 0.89, "approved"),
+                (5000, "QuickShip NG", "Nigeria", 0.95, "declined"),
+                (780, "StreamPlus", "USA", 0.72, "approved"),
+                (6100, "GoldWatch.co", "UAE", 0.98, "declined"),
+                (950, "CloudApps Inc", "USA", 0.68, "approved"),
+            ])
+        ],
+    },
+    "🔐 Account Takeover (ATO)": {
+        "id": "ato_attack",
+        "desc": "Password reset from new device, followed by immediate high-value purchases — ATO pattern.",
+        "cardholder_id": "CH_DEMO_ATO_001",
+        "cardholders": [{
+            "cardholder_id": "CH_DEMO_ATO_001", "name": "Sarah Chen",
+            "card_tier": "Gold", "kyc_verified": True, "pep_flag": False,
+            "home_city": "San Francisco", "risk_score": 0.76, "annual_spend_usd": 32000,
+        }],
+        "transactions": lambda: [
+            {"cardholder_id": "CH_DEMO_ATO_001", "amount": a, "merchant_name": m,
+             "channel": ch, "ip_country": c, "fraud_score": s,
+             "is_flagged": s >= 0.70, "status": st_, "timestamp": _now(minutes=-i*5)}
+            for i, (a, m, ch, c, s, st_) in enumerate([
+                (9999, "Cartier Official", "in_store", "USA", 0.93, "approved"),
+                (7500, "Apple Store Online", "online", "USA", 0.91, "approved"),
+                (3200, "BestBuy.com", "online", "USA", 0.88, "approved"),
+                (15, "Starbucks #4421", "contactless", "USA", 0.15, "approved"),
+                (42, "Uber Rides", "online", "USA", 0.12, "approved"),
+            ])
+        ],
+    },
+    "🕸️ Merchant Fraud Ring": {
+        "id": "merchant_ring",
+        "desc": "3 connected shell merchants laundering money through circular transactions — detected via $graphLookup.",
+        "cardholder_id": "CH_DEMO_RING_001",
+        "cardholders": [{
+            "cardholder_id": "CH_DEMO_RING_001", "name": "Viktor Petrov",
+            "card_tier": "Green", "kyc_verified": False, "pep_flag": True,
+            "home_city": "Miami", "risk_score": 0.91, "annual_spend_usd": 120000,
+        }],
+        "transactions": lambda: [
+            {"cardholder_id": "CH_DEMO_RING_001", "amount": a, "merchant_name": m,
+             "channel": "online", "ip_country": "USA", "fraud_score": s,
+             "is_flagged": True, "status": "approved", "timestamp": _now(hours=-i)}
+            for i, (a, m, s) in enumerate([
+                (25000, "GlobalTrade LLC", 0.96),
+                (24800, "Nexus Imports Co", 0.94),
+                (24500, "Pacific Ventures", 0.93),
+            ])
+        ],
+        "merchant_networks": [
+            {"merchant_id": "M_DEMO_001", "merchant_name": "GlobalTrade LLC",
+             "risk_cluster_flag": True, "cluster_id": "RING_DEMO_A",
+             "edges": [{"target_merchant_id": "M_DEMO_002", "relationship": "shared_owner"}]},
+            {"merchant_id": "M_DEMO_002", "merchant_name": "Nexus Imports Co",
+             "risk_cluster_flag": True, "cluster_id": "RING_DEMO_A",
+             "edges": [{"target_merchant_id": "M_DEMO_003", "relationship": "shared_terminal"}]},
+            {"merchant_id": "M_DEMO_003", "merchant_name": "Pacific Ventures",
+             "risk_cluster_flag": True, "cluster_id": "RING_DEMO_A",
+             "edges": [{"target_merchant_id": "M_DEMO_001", "relationship": "circular_flow"}]},
+        ],
+    },
+    "✈️ Impossible Travel": {
+        "id": "impossible_travel",
+        "desc": "In-store purchase in London, then Tokyo 45 minutes later — physically impossible.",
+        "cardholder_id": "CH_DEMO_TRAVEL_001",
+        "cardholders": [{
+            "cardholder_id": "CH_DEMO_TRAVEL_001", "name": "James Whitfield",
+            "card_tier": "Centurion", "kyc_verified": True, "pep_flag": False,
+            "home_city": "London", "risk_score": 0.85, "annual_spend_usd": 250000,
+        }],
+        "transactions": lambda: [
+            {"cardholder_id": "CH_DEMO_TRAVEL_001", "amount": 8200,
+             "merchant_name": "Tokyo Ginza Dept Store", "channel": "in_store",
+             "ip_country": "Japan", "fraud_score": 0.96, "is_flagged": True,
+             "status": "approved", "timestamp": _now(minutes=0)},
+            {"cardholder_id": "CH_DEMO_TRAVEL_001", "amount": 3400,
+             "merchant_name": "Harrods London", "channel": "in_store",
+             "ip_country": "UK", "fraud_score": 0.22, "is_flagged": False,
+             "status": "approved", "timestamp": _now(minutes=-45)},
+        ],
+    },
+    "🏛️ Sanctions / PEP Hit": {
+        "id": "sanctions_pep",
+        "desc": "Politically Exposed Person with transactions to sanctioned regions — triggers OFAC screening.",
+        "cardholder_id": "CH_DEMO_PEP_001",
+        "cardholders": [{
+            "cardholder_id": "CH_DEMO_PEP_001", "name": "Dmitri Volkov",
+            "card_tier": "Gold", "kyc_verified": True, "pep_flag": True,
+            "home_city": "Zurich", "risk_score": 0.88, "annual_spend_usd": 95000,
+        }],
+        "transactions": lambda: [
+            {"cardholder_id": "CH_DEMO_PEP_001", "amount": a, "merchant_name": m,
+             "channel": "online", "ip_country": c, "fraud_score": s,
+             "is_flagged": True, "status": "approved", "timestamp": _now(hours=-i*2)}
+            for i, (a, m, c, s) in enumerate([
+                (50000, "Minsk Trading House", "Belarus", 0.97),
+                (35000, "Sevastopol Shipping", "Russia", 0.95),
+                (12000, "Tehran Imports", "Iran", 0.99),
+            ])
+        ],
+    },
+}
+
+
+def inject_scenario(scenario_key: str) -> str:
+    """Insert scenario data into MongoDB. Returns summary."""
+    sc = FRAUD_SCENARIOS[scenario_key]
+    tag = sc["id"]
+    # Clean any previous injection of same scenario
+    _inject_db.transactions.delete_many({_INJECT_TAG: tag})
+    _inject_db.cardholders.delete_many({_INJECT_TAG: tag})
+    _inject_db.merchant_networks.delete_many({_INJECT_TAG: tag})
+
+    counts = {}
+    # Cardholders
+    docs = [{**ch, _INJECT_TAG: tag} for ch in sc.get("cardholders", [])]
+    if docs:
+        _inject_db.cardholders.insert_many(docs)
+        counts["cardholders"] = len(docs)
+    # Transactions (callable to get fresh timestamps)
+    txn_fn = sc.get("transactions")
+    txns = txn_fn() if callable(txn_fn) else (txn_fn or [])
+    docs = [{**t, _INJECT_TAG: tag} for t in txns]
+    if docs:
+        _inject_db.transactions.insert_many(docs)
+        counts["transactions"] = len(docs)
+    # Merchant networks
+    nets = sc.get("merchant_networks", [])
+    docs = [{**n, _INJECT_TAG: tag} for n in nets]
+    if docs:
+        _inject_db.merchant_networks.insert_many(docs)
+        counts["merchant_networks"] = len(docs)
+
+    logger.info("Injected scenario %r: %s", tag, counts)
+    return f"Injected **{scenario_key}**: " + ", ".join(f"{v} {k}" for k, v in counts.items())
+
+
+def clear_all_scenarios() -> int:
+    """Remove all injected scenario data. Returns total docs removed."""
+    total = 0
+    for col in ("transactions", "cardholders", "merchant_networks"):
+        r = _inject_db[col].delete_many({_INJECT_TAG: {"$exists": True}})
+        total += r.deleted_count
+    logger.info("Cleared all injected scenarios: %d docs removed", total)
+    return total
+
+
+# ── Sidebar: Scenario Injection Panel ─────────────────────────────────────────
+with st.sidebar:
+    st.markdown("### 🧪 Fraud Scenario Injection")
+    st.markdown(
+        "<small>Inject realistic fraud patterns into MongoDB so the agent "
+        "has live data to detect and investigate.</small>",
+        unsafe_allow_html=True,
+    )
+    for key, sc in FRAUD_SCENARIOS.items():
+        with st.expander(key, expanded=False):
+            st.markdown(f"<small>{sc['desc']}</small>", unsafe_allow_html=True)
+            st.markdown(f"`cardholder_id`: `{sc['cardholder_id']}`")
+            if st.button(f"💉 Inject", key=f"inject_{sc['id']}"):
+                msg = inject_scenario(key)
+                st.success(msg)
+
+    st.markdown("---")
+    if st.button("🗑️ Clear All Injected Scenarios", type="secondary"):
+        n = clear_all_scenarios()
+        st.info(f"Removed {n} injected documents from MongoDB.")
+
+    # Show active scenarios
+    active = _inject_db.transactions.distinct(_INJECT_TAG)
+    if active:
+        st.markdown(f"**Active scenarios:** `{'`, `'.join(active)}`")
+    else:
+        st.markdown("*No injected scenarios active*")
+
 
 # ── Info Columns ───────────────────────────────────────────────────────────────
 col_info, col_mem = st.columns([2, 1])
@@ -111,11 +318,19 @@ mode = st.radio(
 
 cardholder_id = None
 if mode == "👤 Specific Cardholder":
+    # Build cardholder list: injected scenario IDs first, then defaults
+    _injected_ids = sorted({
+        sc["cardholder_id"] for sc in FRAUD_SCENARIOS.values()
+        if sc["id"] in (_inject_db.transactions.distinct(_INJECT_TAG) or [])
+    })
+    _default_ids = [f"CH_{i:04d}" for i in range(1, 21)]
+    _all_ids = (_injected_ids or []) + _default_ids
     cardholder_id = st.selectbox(
         "Select Cardholder:",
-        [f"CH_{i:04d}" for i in range(1, 21)],
+        _all_ids,
         index=0,
         key="fraud_cardholder_select",
+        help="Injected scenario cardholders appear at the top (if active).",
     )
 
 session_id = st.text_input("Session ID:", value="fraud-session-1", key="fraud_session")
