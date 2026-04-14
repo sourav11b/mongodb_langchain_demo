@@ -142,22 +142,36 @@ async def run_with_mongodb_mcp_tools(
     config = _config_for(mode)
     transport_label = "embedded (stdio)" if mode == "embedded" else f"http ({MONGODB_MCP_SERVER_URL})"
 
+    # Import load_mcp_tools here to keep it alongside the client import.
+    from langchain_mcp_adapters.tools import load_mcp_tools
+
     try:
-        # langchain-mcp-adapters ≥0.1.0 removed the context-manager protocol.
-        # Instantiate directly, then await get_tools(). Keep `client` alive in
-        # scope so the underlying MCP subprocess/connection stays open for the
-        # entire duration of the yield (agent invocation).
+        # Use client.session() + load_mcp_tools(session) — the correct API for
+        # langchain-mcp-adapters ≥0.1.0.
+        #
+        # WHY NOT get_tools()?
+        #   get_tools() internally creates asyncio tasks via asyncio.create_task(),
+        #   which never get scheduled when called from a thread-local event loop
+        #   (the pattern we use to isolate Streamlit's event loop). This causes
+        #   it to hang indefinitely even though the MCP subprocess starts fine.
+        #
+        # WHY client.session()?
+        #   client.session("mongodb") opens a single persistent MCP session that
+        #   stays alive across the yield — so the agent can call tools on the
+        #   same connection without re-spawning npx on every tool call.
         print(f"[DEBUG][mcp_client] ① Creating MultiServerMCPClient config={list(config.keys())} transport={transport_label}", flush=True)
         client = MultiServerMCPClient(config)
-        print(f"[DEBUG][mcp_client] ② Client created. Calling await client.get_tools() — this starts the npx subprocess...", flush=True)
-        tools = await client.get_tools()
-        print(f"[DEBUG][mcp_client] ③ get_tools() returned {len(tools)} tools: {[t.name for t in tools]}", flush=True)
-        logger.info(
-            f"MongoDB MCP [{transport_label}]: "
-            f"loaded {len(tools)} tools: {[t.name for t in tools]}"
-        )
-        yield tools
-        print(f"[DEBUG][mcp_client] ⑤ Agent finished — MCP context exiting cleanly.", flush=True)
+        print(f"[DEBUG][mcp_client] ② Opening persistent session via client.session('mongodb')...", flush=True)
+        async with client.session("mongodb") as session:
+            print(f"[DEBUG][mcp_client] ③ Session open. Calling load_mcp_tools(session)...", flush=True)
+            tools = await load_mcp_tools(session)
+            print(f"[DEBUG][mcp_client] ④ Loaded {len(tools)} tools: {[t.name for t in tools]}", flush=True)
+            logger.info(
+                f"MongoDB MCP [{transport_label}]: "
+                f"loaded {len(tools)} tools: {[t.name for t in tools]}"
+            )
+            yield tools
+            print(f"[DEBUG][mcp_client] ⑤ Agent finished — session closing cleanly.", flush=True)
     except Exception as err:
         import traceback as _tb
         print(f"[DEBUG][mcp_client] ✗ EXCEPTION in run_with_mongodb_mcp_tools: {err}", flush=True)

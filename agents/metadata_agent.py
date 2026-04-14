@@ -517,9 +517,38 @@ def run_metadata_query(
     t_start = _time.time()
 
     def _thread_target():
-        """Run the coroutine in a brand-new event loop inside its own thread."""
-        print(f"[DEBUG][_thread_target] Thread started — creating new event loop", flush=True)
+        """
+        Run the async MCP coroutine in a brand-new event loop inside its own
+        dedicated thread — isolating it from Streamlit's event loop.
+
+        Platform notes
+        ──────────────
+        Windows  : asyncio.new_event_loop() returns ProactorEventLoop (Python
+                   3.8+), which supports subprocess I/O natively. No extra setup.
+
+        Linux / Ubuntu : asyncio subprocess spawning from non-main threads
+                   requires a ThreadedChildWatcher so that SIGCHLD signals are
+                   routed to the correct thread's event loop.
+                   • Python <3.12  → attach asyncio.ThreadedChildWatcher
+                   • Python ≥3.12 → ThreadedChildWatcher was removed; the
+                     default watcher handles threads correctly out of the box.
+        """
+        import sys
+        print(f"[DEBUG][_thread_target] Thread started | platform={sys.platform} | py={sys.version.split()[0]}", flush=True)
         loop = asyncio.new_event_loop()
+
+        if sys.platform != "win32":
+            # Linux/macOS: attach a ThreadedChildWatcher so asyncio subprocess
+            # streams work correctly when the loop runs in a non-main thread.
+            try:
+                watcher = asyncio.ThreadedChildWatcher()   # removed in Py 3.12
+                asyncio.get_event_loop_policy().set_child_watcher(watcher)
+                watcher.attach_loop(loop)
+                print(f"[DEBUG][_thread_target] ThreadedChildWatcher attached (Python < 3.12)", flush=True)
+            except AttributeError:
+                # Python 3.12+: no explicit watcher needed; default policy works.
+                print(f"[DEBUG][_thread_target] No ThreadedChildWatcher needed (Python >= 3.12)", flush=True)
+
         asyncio.set_event_loop(loop)
         try:
             result = loop.run_until_complete(
