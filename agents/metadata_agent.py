@@ -374,16 +374,42 @@ def get_llm() -> AzureChatOpenAI:
     )
 
 
+# ── Fallback system prompt (pymongo-only tools) ──────────────────────────────
+FALLBACK_SYSTEM_PROMPT = """You are **VaultIQ Data Intelligence** — a data discovery agent
+for Nexus Financial Group running in **pymongo fallback mode** (MCP server unavailable).
+
+## Available tools — USE ONLY THESE
+
+| Tool | When to use |
+|------|-------------|
+| `search_data_catalog` | Semantic vector search over the metadata catalog |
+| `hybrid_search_catalog` | $rankFusion (BM25 + vector) catalog search |
+| `inspect_collection_schema` | View schema/fields of a specific collection |
+| `execute_mql_query` | Run a find or aggregate query (pass MQL as JSON) |
+| `graph_lookup_merchant_network` | $graphLookup fraud ring traversal |
+| `geo_query_nearby_merchants` | $near geospatial proximity |
+
+## Rules
+- You do NOT have `list-collections`, `list-databases`, `find`, `aggregate`, or any MCP tools.
+- To list collections, use `inspect_collection_schema` on known collection names or tell the user MCP is unavailable.
+- To query data, use `execute_mql_query` — pass a JSON filter or pipeline.
+- For "what datasets exist", use `search_data_catalog` with a broad query.
+- Keep it concise. Show the MQL you generated. Format results in business-friendly way.
+- Do NOT repeatedly call the same tool with the same input — if a tool returns no results, say so and stop.
+"""
+
+
 # ── Agent builder (accepts any tool list) ─────────────────────────────────────
-def build_agent_with_tools(tools: list):
+def build_agent_with_tools(tools: list, system_prompt: str | None = None):
     """
     Compile a LangGraph ReAct agent with the given tool list.
     Called once per session with the combined MCP + native tool set.
     """
+    prompt = system_prompt or SYSTEM_PROMPT
     llm = get_llm().bind_tools(tools)
 
     def agent_node(state: MetadataAgentState):
-        messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
+        messages = [SystemMessage(content=prompt)] + state["messages"]
         response = llm.invoke(messages)
         return {"messages": [response]}
 
@@ -569,7 +595,9 @@ def run_metadata_query(
             question, session_id, history,
             error=f"Agent timed out after {timeout}s. Using pymongo fallback.",
         )
-    except Exception as e:
+    except BaseException as e:
+        # Catch BaseException to handle BaseExceptionGroup from anyio/TaskGroup
+        # that wraps MCP subprocess errors (e.g. BrokenResourceError).
         logger.exception("✗ run_metadata_query EXCEPTION: %s — falling back to pymongo", e)
         return _run_pymongo_fallback(question, session_id, history, error=str(e))
 
@@ -581,10 +609,11 @@ def _run_pymongo_fallback(
     error: str = "",
 ) -> dict:
     """Emergency sync fallback using only pymongo tools (no MCP, no async)."""
+    logger.info("Running pymongo fallback | reason=%s", error)
     ep = EpisodicMemory("metadata_agent", session_id)
     ep.add_turn("human", question)
 
-    agent = build_agent_with_tools(PYMONGO_FALLBACK_TOOLS)
+    agent = build_agent_with_tools(PYMONGO_FALLBACK_TOOLS, system_prompt=FALLBACK_SYSTEM_PROMPT)
     prior = list(history or [])
     state: MetadataAgentState = {
         "messages": prior + [HumanMessage(content=question)],

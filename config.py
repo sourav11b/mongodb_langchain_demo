@@ -158,6 +158,19 @@ def _setup_logging() -> None:
     root.addHandler(fh)
     root.addHandler(ch)
 
+    # Silence noisy 3rd-party loggers — file still gets WARNING+, but not
+    # thousands of lines of HTTP request headers, pymongo wire protocol, etc.
+    for noisy in (
+        "watchdog", "watchdog.observers.inotify_buffer",
+        "httpcore", "httpcore.http11", "httpcore.connection",
+        "httpx", "openai", "openai._base_client",
+        "pymongo", "pymongo.command", "pymongo.connection", "pymongo.serverSelection",
+        "langsmith", "langsmith.client",
+        "urllib3", "urllib3.connectionpool",
+        "asyncio", "charset_normalizer",
+    ):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
 _setup_logging()
 
 # VaultIQ brand colours — MongoDB Atlas palette

@@ -145,22 +145,18 @@ async def run_with_mongodb_mcp_tools(
     from langchain_mcp_adapters.tools import load_mcp_tools
     import traceback as _tb
 
-    # ── Phase 1: connect ── errors here → fallback, generator stops cleanly ──
+    # ─── Architecture ──────────────────────────────────────────────────────────
     #
-    # WHY three phases instead of one try/except?
-    #   @asynccontextmanager only allows ONE yield per call.  If we catch an
-    #   exception that was thrown INTO the generator (i.e. an error raised by the
-    #   agent AFTER yield), and then try to `yield []`, Python raises:
-    #       RuntimeError: generator didn't stop after throw()
-    #   By separating connection (phases 1-2) from the yield (phase 3), the
-    #   fallback `yield []` is only reachable when connection FAILS (before the
-    #   main yield), never after.
+    # Three-phase approach prevents the "generator didn't stop" error:
+    #   Phase 1 (connect): fail → yield [] → return  (clean single-yield exit)
+    #   Phase 2 (load):    fail → close session → yield [] → return
+    #   Phase 3 (yield):   agent runs; exceptions propagate; finally closes session
     #
-    # WHY client.session() not get_tools()?
-    #   get_tools() uses asyncio.create_task() internally — those tasks never get
-    #   scheduled inside a thread-local run_until_complete() loop (Streamlit
-    #   isolation pattern), causing a permanent hang.  client.session() +
-    #   load_mcp_tools(session) awaits directly with no task scheduling.
+    # We catch BaseException (not just Exception) because anyio wraps subprocess
+    # errors in BaseExceptionGroup — a BaseException subclass that slips past
+    # plain `except Exception` and crashes the generator.
+    # ───────────────────────────────────────────────────────────────────────────
+
     logger.debug("① Creating MultiServerMCPClient | config=%s | transport=%s",
                  list(config.keys()), transport_label)
     try:
@@ -168,7 +164,7 @@ async def run_with_mongodb_mcp_tools(
         logger.debug("② Entering client.session('mongodb') — spawns npx subprocess...")
         session_cm = client.session("mongodb")
         session = await session_cm.__aenter__()
-    except Exception as err:
+    except BaseException as err:
         logger.error("✗ MCP connect failed [%s]: %s\n%s",
                      transport_label, err, _tb.format_exc())
         yield []
@@ -180,21 +176,25 @@ async def run_with_mongodb_mcp_tools(
         tools = await load_mcp_tools(session)
         logger.info("④ MCP [%s] loaded %d tools: %s",
                     transport_label, len(tools), [t.name for t in tools])
-    except Exception as err:
+    except BaseException as err:
         logger.error("✗ load_mcp_tools failed [%s]: %s\n%s",
                      transport_label, err, _tb.format_exc())
-        await session_cm.__aexit__(None, None, None)
+        try:
+            await session_cm.__aexit__(None, None, None)
+        except BaseException:
+            pass
         yield []
         return
 
     # ── Phase 3: yield tools — session stays open for agent invocations ─────
-    # Any exception raised by the agent propagates naturally out of the
-    # @asynccontextmanager without triggering a second yield.
     try:
         yield tools
         logger.debug("⑤ Agent finished — MCP session closing cleanly.")
     finally:
-        await session_cm.__aexit__(None, None, None)
+        try:
+            await session_cm.__aexit__(None, None, None)
+        except BaseException:
+            logger.debug("  Session cleanup raised (subprocess already dead) — ignored.")
 
 
 # ── Sync helper (UI display only — tools not invocable after context exits) ───
