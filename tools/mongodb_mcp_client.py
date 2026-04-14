@@ -143,13 +143,17 @@ async def run_with_mongodb_mcp_tools(
     transport_label = "embedded (stdio)" if mode == "embedded" else f"http ({MONGODB_MCP_SERVER_URL})"
 
     try:
-        async with MultiServerMCPClient(config) as client:
-            tools = client.get_tools()
-            logger.info(
-                f"MongoDB MCP [{transport_label}]: "
-                f"loaded {len(tools)} tools: {[t.name for t in tools]}"
-            )
-            yield tools
+        # langchain-mcp-adapters ≥0.1.0 removed the context-manager protocol.
+        # Instantiate directly, then await get_tools(). Keep `client` alive in
+        # scope so the underlying MCP subprocess/connection stays open for the
+        # entire duration of the yield (agent invocation).
+        client = MultiServerMCPClient(config)
+        tools = await client.get_tools()
+        logger.info(
+            f"MongoDB MCP [{transport_label}]: "
+            f"loaded {len(tools)} tools: {[t.name for t in tools]}"
+        )
+        yield tools
     except Exception as err:
         logger.warning(
             f"MongoDB MCP [{transport_label}] failed: {err}. "
