@@ -81,7 +81,7 @@ st.markdown("""
   <p style="margin-top:.6rem;">
     <span class="blog-feature-tag bft-mql">🟡 Text-to-MQL</span>
     <span class="blog-feature-tag bft-vector">🔵 Atlas Vector Search</span>
-    <span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search</span>
+    <span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search ($rankFusion)</span>
     <span class="blog-feature-tag bft-ckpt">🟣 MongoDB Checkpointer</span>
     <span class="blog-feature-tag bft-smith">🔴 LangSmith Observability</span>
     &nbsp;<a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank" style="color:rgba(255,255,255,.75);font-size:.78rem;">📄 Partnership blog →</a>
@@ -140,7 +140,7 @@ with st.sidebar:
 
     st.markdown(f"**Session:** `{st.session_state.disco_session_id}`")
 
-# ── Blog feature callout: Text-to-MQL ─────────────────────────────────────────
+# ── Blog feature callouts ──────────────────────────────────────────────────────
 st.markdown("""
 <div class="blog-note">
   <span class="blog-feature-tag bft-mql">🟡 Blog Feature: Text-to-MQL</span>
@@ -148,6 +148,11 @@ st.markdown("""
   <code>collection-schema</code>, and 9 more tools — giving this agent <em>natural-language-to-MQL</em>
   capability identical to the <a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank">MongoDBDatabaseToolkit</a>
   described in the LangChain × MongoDB partnership blog.
+  &nbsp;&nbsp;
+  <span class="blog-feature-tag bft-hybrid">🟢 Blog Feature: Hybrid Search — native Atlas <code>$rankFusion</code></span>
+  &nbsp; <code>hybrid_search_catalog</code> sends a <strong>single aggregation pipeline</strong> to Atlas:
+  a <code>$vectorSearch</code> (Voyage AI semantic) leg and a <code>$search</code> (BM25 full-text) leg,
+  fused server-side via Reciprocal Rank Fusion inside Atlas — <em>zero Python-side score merging</em>.
 </div>
 """, unsafe_allow_html=True)
 

@@ -126,7 +126,7 @@ with st.sidebar:
     )
     st.markdown("""
 - 🔵 **Atlas Vector Search**
-- 🟢 **Hybrid Search** (BM25 + vector)
+- 🟢 **Hybrid Search** (`$rankFusion`: BM25 + vector, server-side Atlas)
 - 🟡 **Text-to-MQL** (NL → MongoDB)
 - 🟣 **MongoDB Checkpointer**
 - 🔴 **LangSmith Observability**
@@ -135,7 +135,7 @@ with st.sidebar:
     st.markdown("**MongoDB Query Patterns**")
     st.markdown("""
 - 🔍 Vector Search
-- 🔀 Hybrid Search (BM25+vec)
+- 🔀 `$rankFusion` Hybrid Search
 - 🕸️ Graph Lookup
 - 📍 Geospatial Queries
 - 📈 Time-Series Aggregation
@@ -213,7 +213,7 @@ st.markdown("""
     </p>
     <p style="margin-top:0.5rem;">
       <span class="blog-feature-tag bft-vector">🔵 Atlas Vector Search</span>
-      <span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search (BM25 + vector)</span>
+      <span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search ($rankFusion)</span>
       <span class="blog-feature-tag bft-mql">🟡 Text-to-MQL</span>
       <span class="blog-feature-tag bft-ckpt">🟣 MongoDB Checkpointer</span>
       <span class="blog-feature-tag bft-smith">🔴 LangSmith Observability</span>
@@ -244,7 +244,7 @@ with st.expander("📊 Blog Feature Coverage — where each feature is demonstra
       <td class="check">✅ Compliance rule retrieval</td>
     </tr>
     <tr>
-      <td><span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search</span><br><small>BM25 keyword + vector in one query</small></td>
+      <td><span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search</span><br><small><code>$rankFusion</code>: <code>$vectorSearch</code> + <code>$search</code> (BM25) fused server-side in Atlas — zero Python merging</small></td>
       <td class="check">✅ Hybrid catalog search</td>
       <td class="dash">—</td>
       <td class="check">✅ Hybrid offer search</td>

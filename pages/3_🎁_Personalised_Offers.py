@@ -42,7 +42,7 @@ st.markdown("""
   <p>Multi-turn cardholder chat — semantic offer matching, geo-proximity discovery, and spending intelligence</p>
   <p style="margin-top:.6rem;">
     <span class="blog-feature-tag bft-vector">🔵 Atlas Vector Search</span>
-    <span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search (BM25 + vector)</span>
+    <span class="blog-feature-tag bft-hybrid">🟢 Hybrid Search ($rankFusion)</span>
     <span class="blog-feature-tag bft-ckpt">🟣 MongoDB Checkpointer</span>
     <span class="blog-feature-tag bft-smith">🔴 LangSmith Observability</span>
     &nbsp;<a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank" style="color:rgba(255,255,255,.75);font-size:.78rem;">📄 Partnership blog →</a>
@@ -55,7 +55,7 @@ with col_config:
     st.markdown("**Capabilities:**")
     st.markdown("""
 - 🔍 **Semantic search** — find offers matching interests (vector similarity)
-- 🔀 **Hybrid search** — BM25 + vector for precise offer matching
+- 🔀 **Hybrid search** — `$rankFusion`: `$vectorSearch` + `$search` (BM25) in one Atlas pipeline, fused server-side
 - 📍 **Geo proximity** — locate nearby preferred partner merchants
 - 💳 **Spending analytics** — category breakdown from transaction history
 - ✨ **Points estimate** — Membership Rewards calculation by category multipliers
@@ -66,10 +66,15 @@ with col_config:
 
     st.markdown("""
 <div class="blog-note" style="margin-top:.6rem;">
-  <span class="blog-feature-tag bft-hybrid">🟢 Blog Feature: Hybrid Search (BM25 + vector)</span>
-  &nbsp; <code>hybrid_search_offers</code> combines BM25 keyword scoring with Voyage AI vector similarity
-  in a single Atlas query — the <em>"Hybrid search combining keyword full-text search with vector similarity"</em>
-  pattern from the <a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank">LangChain × MongoDB blog</a>.
+  <span class="blog-feature-tag bft-hybrid">🟢 Blog Feature: Hybrid Search — native Atlas <code>$rankFusion</code></span>
+  &nbsp; <code>hybrid_search_offers</code> implements the <em>"Hybrid search combining keyword full-text search with vector similarity"</em>
+  pattern from the <a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank">LangChain × MongoDB blog</a>
+  using a <strong>single Atlas aggregation pipeline</strong>:
+  <ul style="margin:.4rem 0 .2rem 1.2rem; font-size:.85rem;">
+    <li><code>$vectorSearch</code> leg — Voyage AI <code>voyage-finance-2</code> embeddings for semantic intent matching</li>
+    <li><code>$search</code> leg — BM25 full-text on <code>description</code>, <code>benefit_text</code>, <code>merchant_name</code>, <code>category</code></li>
+    <li><code>$rankFusion</code> — Reciprocal Rank Fusion runs <strong>inside Atlas</strong>, zero Python-side score merging</li>
+  </ul>
   &nbsp;&nbsp;
   <span class="blog-feature-tag bft-vector">🔵 Blog Feature: Atlas Vector Search</span>
   &nbsp; <code>find_relevant_offers</code> uses pure <code>$vectorSearch</code> for intent-based offer matching.
@@ -203,20 +208,23 @@ if st.button("🗑️ Clear Conversation"):
 st.markdown("---")
 with st.expander("🔍 How Offer Matching Works"):
     st.markdown("""
-**Hybrid Search Flow:**
+**Hybrid Search Flow (native Atlas `$rankFusion`):**
 ```
 User: "dining offers near Times Square for Platinum card"
         │
-        ├─► Semantic: Voyage AI embeds query → Atlas Vector Search → top-N offers by cosine similarity
-        │
-        ├─► BM25: Text index search on offer descriptions → keyword matches
-        │
-        ├─► Merge: RRF (Reciprocal Rank Fusion) combines scores — boosted matches appear first
-        │
+        └─► hybrid_search_offers → single $rankFusion aggregation pipeline sent to Atlas
+                │
+                ├─► $vectorSearch leg: Voyage AI embeds query → cosine similarity over offer embeddings
+                │
+                ├─► $search leg: BM25 full-text on description / benefit_text / merchant_name / category
+                │
+                └─► $rankFusion: Atlas fuses both legs via Reciprocal Rank Fusion SERVER-SIDE
+                        │  (no Python score merging — one network round-trip)
         ├─► Geo filter: $near on offer.location for proximity ranking
         │
         └─► Tier filter: eligible_tiers includes "Platinum" → personalised results
 ```
-**Why hybrid?** Pure vector catches semantic intent ("fine dining" matches "upscale restaurant"),
-while BM25 catches exact keywords ("Times Square", "Platinum"). Combined = best recall + precision.
+**Why `$rankFusion`?** Pure `$vectorSearch` catches semantic intent ("fine dining" → "upscale restaurant"),
+while `$search` (BM25) catches exact keywords ("Times Square", "Platinum"). Atlas fuses both server-side
+via Reciprocal Rank Fusion — best recall + precision in a single query, no Python-side merging.
 """)

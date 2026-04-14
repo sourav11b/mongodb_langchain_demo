@@ -1,9 +1,9 @@
-# 💳 American Express × AI Agent Showcase
+# 🏦 VaultIQ — NextGen AI Financial Intelligence Suite
 
 > **Built on the [LangChain × MongoDB Partnership](https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/)**
 > *"The AI Agent Stack That Runs On The Database You Already Trust"*
 
-This showcase demonstrates every key feature announced in the official LangChain + MongoDB partnership — applied to four real-world American Express use cases using **MongoDB Atlas**, **LangChain + LangGraph**, **Voyage AI**, and **Azure OpenAI GPT-4o**.
+This showcase demonstrates every key feature announced in the official LangChain + MongoDB partnership — applied to four real-world financial services use cases for **Nexus Financial Group (NFG)** using **MongoDB Atlas**, **LangChain + LangGraph**, **Voyage AI**, and **Azure OpenAI GPT-4o**.
 
 ---
 
@@ -12,7 +12,7 @@ This showcase demonstrates every key feature announced in the official LangChain
 | Blog Feature | Description | P1 Data Discovery | P2 Fraud | P3 Offers | P4 Compliance |
 |---|---|---|---|---|---|
 | 🔵 **Atlas Vector Search** | Semantic retrieval over enterprise data | ✅ Catalog + memory recall | ✅ Fraud case search | ✅ Offer matching | ✅ Compliance rules |
-| 🟢 **Hybrid Search** | BM25 keyword + vector in one Atlas query | ✅ Catalog hybrid search | — | ✅ Offer hybrid search | — |
+| 🟢 **Hybrid Search** | `$rankFusion`: `$vectorSearch` + `$search` (BM25) fused **server-side** in Atlas — zero Python merging | ✅ `hybrid_search_catalog` | — | ✅ `hybrid_search_offers` | — |
 | 🟡 **Text-to-MQL** | NL → MQL via MongoDBDatabaseToolkit / MCP | ✅ MCP find/aggregate/schema | — | — | ✅ Rule queries |
 | 🟣 **MongoDB Checkpointer** | Persistent LangGraph state in Atlas | ✅ Session memory store | ✅ Investigation audit trail | ✅ Chat history | ✅ Regulatory audit |
 | 🔴 **LangSmith Observability** | End-to-end agent traces + evaluations | ✅ MCP + retrieval traces | ✅ Autonomous pipeline | ✅ Offer tool traces | ✅ Compliance traces |
@@ -24,11 +24,11 @@ This showcase demonstrates every key feature announced in the official LangChain
 ### 🔍 Use Case 1 — Semantic Metadata Layer (Data Discovery)
 **Blog features active:** 🔵 Atlas Vector Search · 🟢 Hybrid Search · 🟡 Text-to-MQL · 🟣 MongoDB Checkpointer · 🔴 LangSmith
 
-Multi-turn chat agent that lets business analysts query Amex's enterprise data catalog in plain English.
+Multi-turn chat agent that lets business analysts query VaultIQ's enterprise data catalog in plain English.
 
 - **Text-to-MQL** via MongoDB MCP Server — `find`, `aggregate`, `collection-schema`, `list-collections` and 8 more tools let the agent generate and execute MQL without any hand-coded endpoints
 - **Atlas Vector Search** on the `data_catalog` collection for semantic dataset discovery
-- **Hybrid Search** combining BM25 keyword + Voyage AI vector for precise catalog matching
+- **Native Atlas `$rankFusion` Hybrid Search** (`hybrid_search_catalog`) — a **single aggregation pipeline** runs a `$vectorSearch` (Voyage AI semantic embeddings) leg and a `$search` (BM25 full-text) leg in parallel, then fuses them server-side via Reciprocal Rank Fusion. No Python-side score merging.
 - **MongoDB Checkpointer** — multi-turn session state + semantic memory consolidation: conversations are distilled by GPT-4o, embedded with Voyage AI (1024-dim), and stored in `session_memories` for cross-session recall via `$vectorSearch`
 
 ### 🚨 Use Case 2 — Fraud Intelligence Agent
@@ -45,9 +45,12 @@ Autonomous agent that scans transaction streams, detects impossible-travel patte
 ### 🎁 Use Case 3 — Personalised Offers Concierge
 **Blog features active:** 🔵 Atlas Vector Search · 🟢 Hybrid Search · 🟣 MongoDB Checkpointer · 🔴 LangSmith
 
-Multi-turn cardholder chat agent that recommends hyper-relevant Amex offers and nearby merchants.
+Multi-turn cardholder chat agent that recommends hyper-relevant NFG offers and nearby merchants.
 
-- **Hybrid Search (BM25 + vector)** — `hybrid_search_offers` combines keyword scoring with Voyage AI embeddings in a single Atlas query, exactly as described in the blog's *"Hybrid search combining keyword full-text search with vector similarity"* section
+- **Native Atlas `$rankFusion` Hybrid Search** (`hybrid_search_offers`) — implements the blog's *"Hybrid search combining keyword full-text search with vector similarity"* pattern. A **single aggregation pipeline** fuses two sub-pipelines inside Atlas:
+  - `$vectorSearch` leg: Voyage AI `voyage-finance-2` embeddings for semantic intent matching
+  - `$search` leg: BM25 full-text search over `description`, `benefit_text`, `merchant_name`, `category`
+  - Both scored server-side via Reciprocal Rank Fusion — **no Python-side merging**
 - **Atlas Vector Search** — `find_relevant_offers` uses pure `$vectorSearch` for intent-based matching
 - Geospatial `$near` queries to surface nearby preferred partner merchants
 - **MongoDB Checkpointer** — full conversation history persisted in MongoDB for multi-turn context
@@ -69,21 +72,22 @@ Autonomous regulatory agent operating across BSA, FATCA, OFAC, GDPR, and PSD2.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                    Streamlit UI (Amex brand)                  │
-│         Chat pages (P1, P3)  │  Autonomous agents (P2, P4)   │
-├──────────────────────────────┴──────────────────────────────┤
-│                  LangGraph Agent Orchestration                │
-│   Agent Node (Azure GPT-4o)  ◄──►  Tool Node                │
-│                                    MongoDB MCP + pymongo      │
-├─────────────────────────────────────────────────────────────┤
-│                       MongoDB Atlas                           │
-│   $vectorSearch · Hybrid BM25+vec · $graphLookup             │
-│   $near (geo) · Time-Series · Checkpointer (agent state)     │
-│   Voyage AI embeddings  (voyage-finance-2, 1024-dim)         │
-├─────────────────────────────────────────────────────────────┤
-│  MongoDB MCP Server (Text-to-MQL)  │  LangSmith Observability│
-│  FastMCP custom tool server        │  Traces · Evals          │
-└─────────────────────────────────────────────────────────────┘
+│               Streamlit UI (VaultIQ · Nexus Financial Group)              │
+│         Chat pages (P1, P3)  │  Autonomous agents (P2, P4)               │
+├──────────────────────────────┴──────────────────────────────────────────┤
+│                  LangGraph Agent Orchestration                            │
+│   Agent Node (Azure GPT-4o)  ◄──►  Tool Node                            │
+│                                    MongoDB MCP + pymongo                  │
+├─────────────────────────────────────────────────────────────────────────┤
+│                           MongoDB Atlas                                   │
+│   $vectorSearch  ──┐                                                     │
+│   $search (BM25) ──┴─► $rankFusion (server-side RRF) = Hybrid Search    │
+│   $graphLookup · $near (geo) · Time-Series · Checkpointer                │
+│   Voyage AI embeddings  (voyage-finance-2, 1024-dim)                     │
+├─────────────────────────────────────────────────────────────────────────┤
+│  MongoDB MCP Server (Text-to-MQL)  │  LangSmith Observability            │
+│  FastMCP custom tool server        │  Traces · Evals                      │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 
@@ -137,4 +141,4 @@ python -m streamlit run app.py
 
 ---
 
-> *This demo uses synthetic data only. No real cardholder PII. Built for American Express × LangChain × MongoDB showcase purposes.*
+> *This demo uses synthetic data only. No real cardholder PII. Built for Nexus Financial Group · VaultIQ Platform · LangChain × MongoDB showcase purposes.*
