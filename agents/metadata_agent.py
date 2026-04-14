@@ -430,21 +430,28 @@ async def _run_with_mcp(
     """
     from tools.mongodb_mcp_client import run_with_mongodb_mcp_tools
 
+    import time as _time
+    print(f"[DEBUG][metadata_agent] ➤ _run_with_mcp START | q={question[:60]!r} | session={session_id}", flush=True)
+    t0 = _time.time()
+
     ep = EpisodicMemory("metadata_agent", session_id)
     ep.add_turn("human", question)
+    print(f"[DEBUG][metadata_agent]   EpisodicMemory initialised ({_time.time()-t0:.1f}s)", flush=True)
 
+    print(f"[DEBUG][metadata_agent]   Entering run_with_mongodb_mcp_tools()...", flush=True)
     async with run_with_mongodb_mcp_tools() as mcp_tools:
+        print(f"[DEBUG][metadata_agent]   run_with_mongodb_mcp_tools yielded {len(mcp_tools)} MCP tools ({_time.time()-t0:.1f}s)", flush=True)
         mcp_available = len(mcp_tools) > 0
         all_tools = (mcp_tools + NATIVE_AMEX_TOOLS) if mcp_available else PYMONGO_FALLBACK_TOOLS
+        print(f"[DEBUG][metadata_agent]   Tool set: {'MCP+native' if mcp_available else 'pymongo fallback'} — {len(all_tools)} tools total", flush=True)
 
         agent = build_agent_with_tools(all_tools)
+        print(f"[DEBUG][metadata_agent]   LangGraph agent compiled ({_time.time()-t0:.1f}s)", flush=True)
 
         # Build message list:
         #  [memory_context?]  [prior turns...]  [current question]
         prior: list[BaseMessage] = list(history or [])
         if memory_context is not None:
-            # Inject semantic memory context only at the very start
-            # (avoid re-injecting on every turn after the first)
             if not prior:
                 prior = [memory_context]
 
@@ -455,10 +462,14 @@ async def _run_with_mcp(
             "last_query_mql": "",
             "last_query_results": [],
         }
+        print(f"[DEBUG][metadata_agent]   State ready — {len(state['messages'])} messages. Calling agent.ainvoke()...", flush=True)
 
         result = await agent.ainvoke(state, {"recursion_limit": AGENT_RECURSION_LIMIT})
+        print(f"[DEBUG][metadata_agent]   agent.ainvoke() RETURNED ({_time.time()-t0:.1f}s total)", flush=True)
+
         final_msg = result["messages"][-1]
         answer = final_msg.content if hasattr(final_msg, "content") else str(final_msg)
+        print(f"[DEBUG][metadata_agent]   Answer length={len(answer)} chars", flush=True)
 
         ep.add_turn("ai", answer)
 
@@ -467,6 +478,7 @@ async def _run_with_mcp(
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 for tc in msg.tool_calls:
                     tool_calls_used.append(tc.get("name", "unknown"))
+        print(f"[DEBUG][metadata_agent]   Tools called: {tool_calls_used}", flush=True)
 
         return {
             "answer": answer,
@@ -500,22 +512,40 @@ def run_metadata_query(
     timeout        : Seconds before we give up and fall back to pymongo tools.
                      First embedded-MCP run may take ~60 s (npx download).
     """
+    import time as _time
+    print(f"[DEBUG][run_metadata_query] ▶ CALLED | q={question[:60]!r} | timeout={timeout}s", flush=True)
+    t_start = _time.time()
+
     def _thread_target():
         """Run the coroutine in a brand-new event loop inside its own thread."""
+        print(f"[DEBUG][_thread_target] Thread started — creating new event loop", flush=True)
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(
+            result = loop.run_until_complete(
                 _run_with_mcp(question, session_id, history, memory_context)
             )
+            print(f"[DEBUG][_thread_target] loop.run_until_complete DONE ({_time.time()-t_start:.1f}s)", flush=True)
+            return result
+        except Exception as _e:
+            import traceback as _tb
+            print(f"[DEBUG][_thread_target] EXCEPTION: {_e}", flush=True)
+            print(_tb.format_exc(), flush=True)
+            raise
         finally:
             loop.close()
+            print(f"[DEBUG][_thread_target] Event loop closed", flush=True)
 
     try:
+        print(f"[DEBUG][run_metadata_query] Submitting _thread_target to ThreadPoolExecutor...", flush=True)
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_thread_target)
-            return future.result(timeout=timeout)
+            print(f"[DEBUG][run_metadata_query] Waiting for future.result(timeout={timeout}s)...", flush=True)
+            result = future.result(timeout=timeout)
+            print(f"[DEBUG][run_metadata_query] ✓ Got result in {_time.time()-t_start:.1f}s | mcp={result.get('mcp_tools_active')} | tools={result.get('tool_calls')}", flush=True)
+            return result
     except concurrent.futures.TimeoutError:
+        print(f"[DEBUG][run_metadata_query] ✗ TIMEOUT after {timeout}s — falling back to pymongo", flush=True)
         logger.warning(
             f"run_metadata_query timed out after {timeout}s — falling back to pymongo tools."
         )
@@ -524,6 +554,9 @@ def run_metadata_query(
             error=f"Agent timed out after {timeout}s (MCP subprocess may still be starting up). Using pymongo fallback.",
         )
     except Exception as e:
+        import traceback as _tb
+        print(f"[DEBUG][run_metadata_query] ✗ EXCEPTION: {e}", flush=True)
+        print(_tb.format_exc(), flush=True)
         logger.warning(f"run_metadata_query thread error: {e} — falling back to pymongo tools.")
         return _run_pymongo_fallback(question, session_id, history, error=str(e))
 

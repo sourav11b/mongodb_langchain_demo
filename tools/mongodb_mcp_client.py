@@ -147,14 +147,21 @@ async def run_with_mongodb_mcp_tools(
         # Instantiate directly, then await get_tools(). Keep `client` alive in
         # scope so the underlying MCP subprocess/connection stays open for the
         # entire duration of the yield (agent invocation).
+        print(f"[DEBUG][mcp_client] ① Creating MultiServerMCPClient config={list(config.keys())} transport={transport_label}", flush=True)
         client = MultiServerMCPClient(config)
+        print(f"[DEBUG][mcp_client] ② Client created. Calling await client.get_tools() — this starts the npx subprocess...", flush=True)
         tools = await client.get_tools()
+        print(f"[DEBUG][mcp_client] ③ get_tools() returned {len(tools)} tools: {[t.name for t in tools]}", flush=True)
         logger.info(
             f"MongoDB MCP [{transport_label}]: "
             f"loaded {len(tools)} tools: {[t.name for t in tools]}"
         )
         yield tools
+        print(f"[DEBUG][mcp_client] ⑤ Agent finished — MCP context exiting cleanly.", flush=True)
     except Exception as err:
+        import traceback as _tb
+        print(f"[DEBUG][mcp_client] ✗ EXCEPTION in run_with_mongodb_mcp_tools: {err}", flush=True)
+        print(_tb.format_exc(), flush=True)
         logger.warning(
             f"MongoDB MCP [{transport_label}] failed: {err}. "
             "Agents will use pymongo fallback tools."
