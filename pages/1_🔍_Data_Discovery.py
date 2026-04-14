@@ -143,16 +143,18 @@ with st.sidebar:
 # ── Blog feature callouts ──────────────────────────────────────────────────────
 st.markdown("""
 <div class="blog-note">
-  <span class="blog-feature-tag bft-mql">🟡 Blog Feature: Text-to-MQL</span>
-  &nbsp; The <strong>MongoDB MCP Server</strong> below exposes <code>find</code>, <code>aggregate</code>,
-  <code>collection-schema</code>, and 9 more tools — giving this agent <em>natural-language-to-MQL</em>
-  capability identical to the <a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank">MongoDBDatabaseToolkit</a>
+  <span class="blog-feature-tag bft-mql">🟡 Blog Feature: Text-to-MQL — MongoDB MCP Server (primary)</span>
+  &nbsp; The <strong>MongoDB MCP Server</strong> is the <em>primary data interface</em> for this agent.
+  It exposes <code>list-collections</code>, <code>collection-schema</code>, <code>find</code>, <code>aggregate</code>,
+  and 7 more tools — the agent calls these <strong>directly</strong> for all data queries, listings, and schema inspection.
+  No semantic search intermediary. Identical to the
+  <a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank">MongoDBDatabaseToolkit</a>
   described in the LangChain × MongoDB partnership blog.
   &nbsp;&nbsp;
-  <span class="blog-feature-tag bft-hybrid">🟢 Blog Feature: Hybrid Search — native Atlas <code>$rankFusion</code></span>
-  &nbsp; <code>hybrid_search_catalog</code> sends a <strong>single aggregation pipeline</strong> to Atlas:
-  a <code>$vectorSearch</code> (Voyage AI semantic) leg and a <code>$search</code> (BM25 full-text) leg,
-  fused server-side via Reciprocal Rank Fusion inside Atlas — <em>zero Python-side score merging</em>.
+  <span class="blog-feature-tag bft-hybrid">🟢 Blog Feature: Hybrid Search — <code>$rankFusion</code> (catalog discovery only)</span>
+  &nbsp; <code>hybrid_search_catalog</code> is used <em>only</em> when the user asks to search the metadata catalog
+  by topic (e.g. "find datasets related to fraud"). It sends a single <code>$rankFusion</code> pipeline —
+  <code>$vectorSearch</code> + <code>$search</code> (BM25) — fused server-side inside Atlas. Zero Python-side merging.
 </div>
 """, unsafe_allow_html=True)
 
