@@ -303,20 +303,14 @@ if send and user_input.strip():
         if is_first_mcp_call else
         "🤖 Agent reasoning + querying MongoDB…"
     )
-    import time as _time
+    import logging as _logging
     import traceback as _tb
-
-    # ── Live debug status panel ────────────────────────────────────────────────
-    debug_log = []
-    def _log(msg: str):
-        ts = _time.strftime("%H:%M:%S")
-        entry = f"`{ts}` {msg}"
-        debug_log.append(entry)
-        print(f"[DEBUG][page] {msg}", flush=True)
+    from config import LOG_FILE
+    _page_logger = _logging.getLogger("vaultiq.page.data_discovery")
 
     with st.status(spinner_msg, expanded=True) as status_box:
         status_box.write("⏳ Initialising agent…")
-        _log(f"► run_metadata_query called | q={question[:60]!r}")
+        _page_logger.debug("► run_metadata_query called | q=%r", question[:60])
         try:
             result = run_metadata_query(
                 question=question,
@@ -324,7 +318,8 @@ if send and user_input.strip():
                 history=st.session_state.disco_lc_history,
                 memory_context=memory_ctx_msg,
             )
-            _log(f"✓ run_metadata_query returned | mcp={result.get('mcp_tools_active')} | tools={result.get('tool_calls')}")
+            _page_logger.debug("✓ run_metadata_query returned | mcp=%s | tools=%s",
+                               result.get("mcp_tools_active"), result.get("tool_calls"))
             status_box.write(f"✅ Agent finished — MCP active: `{result.get('mcp_tools_active')}` | Tools used: `{result.get('tool_calls')}`")
             status_box.update(label="✅ Agent complete", state="complete", expanded=False)
 
@@ -355,7 +350,7 @@ if send and user_input.strip():
 
         except Exception as e:
             err_detail = _tb.format_exc()
-            _log(f"✗ EXCEPTION: {e}")
+            _page_logger.exception("✗ Agent EXCEPTION: %s", e)
             status_box.update(label=f"❌ Agent error: {str(e)[:80]}", state="error", expanded=True)
             status_box.write(f"```\n{err_detail[-1000:]}\n```")
             st.session_state.disco_messages.append({
@@ -371,10 +366,14 @@ if send and user_input.strip():
                 "tools": [], "mcp": False,
             })
 
-    # Show full debug trace in an expander after every run
-    with st.expander("🔍 Debug trace (last request)", expanded=False):
-        for line in debug_log:
-            st.markdown(line)
+    # Log file location for user reference
+    with st.expander(f"📄 Full debug log → `{LOG_FILE}`", expanded=False):
+        st.markdown(
+            f"All debug-level logs (MCP client, agent, tool calls) are written to:\n\n"
+            f"```\n{LOG_FILE}\n```\n\n"
+            f"Tail the log in a terminal:  `tail -f {LOG_FILE}`  (Linux) or "
+            f"`Get-Content {LOG_FILE} -Wait -Tail 50`  (PowerShell)"
+        )
 
     st.rerun()
 

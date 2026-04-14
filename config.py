@@ -8,7 +8,9 @@ so config works correctly regardless of the working directory the app
 is launched from.
 """
 
+import logging
 import os
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -117,6 +119,46 @@ MONGODB_MCP_READ_ONLY: bool  = os.getenv("MONGODB_MCP_READ_ONLY", "true").lower(
 # ── App ────────────────────────────────────────────────────────────────────────
 APP_ENV: str   = os.getenv("APP_ENV", "demo")
 LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
+
+# ── File logging setup ────────────────────────────────────────────────────────
+_LOG_DIR = Path(__file__).parent / "logs"
+_LOG_DIR.mkdir(exist_ok=True)
+LOG_FILE: Path = _LOG_DIR / "vaultiq.log"
+
+def _setup_logging() -> None:
+    """
+    Configure root logger with:
+      • RotatingFileHandler  → logs/vaultiq.log  (DEBUG+, 10 MB × 5 files)
+      • StreamHandler        → stderr/terminal    (WARNING+ to keep terminal clean)
+    Call once at startup.  Idempotent — skips if handlers already attached.
+    """
+    root = logging.getLogger()
+    numeric_level = getattr(logging, LOG_LEVEL.upper(), logging.INFO)
+    root.setLevel(logging.DEBUG)           # capture everything; handlers filter
+
+    if any(isinstance(h, RotatingFileHandler) for h in root.handlers):
+        return                             # already configured
+
+    fmt_file    = "%(asctime)s | %(levelname)-8s | %(name)-35s | %(message)s"
+    fmt_console = "%(levelname)-8s | %(name)s | %(message)s"
+    datefmt     = "%Y-%m-%d %H:%M:%S"
+
+    # File handler — DEBUG and above → logs/vaultiq.log
+    fh = RotatingFileHandler(
+        LOG_FILE, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
+    fh.setLevel(logging.DEBUG)
+    fh.setFormatter(logging.Formatter(fmt_file, datefmt=datefmt))
+
+    # Console handler — WARNING and above (keeps terminal readable)
+    ch = logging.StreamHandler()
+    ch.setLevel(numeric_level)
+    ch.setFormatter(logging.Formatter(fmt_console))
+
+    root.addHandler(fh)
+    root.addHandler(ch)
+
+_setup_logging()
 
 # VaultIQ brand colours — MongoDB Atlas palette
 BRAND_PRIMARY   = "#00ED64"   # MongoDB bright green

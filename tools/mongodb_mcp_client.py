@@ -142,45 +142,59 @@ async def run_with_mongodb_mcp_tools(
     config = _config_for(mode)
     transport_label = "embedded (stdio)" if mode == "embedded" else f"http ({MONGODB_MCP_SERVER_URL})"
 
-    # Import load_mcp_tools here to keep it alongside the client import.
     from langchain_mcp_adapters.tools import load_mcp_tools
+    import traceback as _tb
 
+    # ── Phase 1: connect ── errors here → fallback, generator stops cleanly ──
+    #
+    # WHY three phases instead of one try/except?
+    #   @asynccontextmanager only allows ONE yield per call.  If we catch an
+    #   exception that was thrown INTO the generator (i.e. an error raised by the
+    #   agent AFTER yield), and then try to `yield []`, Python raises:
+    #       RuntimeError: generator didn't stop after throw()
+    #   By separating connection (phases 1-2) from the yield (phase 3), the
+    #   fallback `yield []` is only reachable when connection FAILS (before the
+    #   main yield), never after.
+    #
+    # WHY client.session() not get_tools()?
+    #   get_tools() uses asyncio.create_task() internally — those tasks never get
+    #   scheduled inside a thread-local run_until_complete() loop (Streamlit
+    #   isolation pattern), causing a permanent hang.  client.session() +
+    #   load_mcp_tools(session) awaits directly with no task scheduling.
+    logger.debug("① Creating MultiServerMCPClient | config=%s | transport=%s",
+                 list(config.keys()), transport_label)
     try:
-        # Use client.session() + load_mcp_tools(session) — the correct API for
-        # langchain-mcp-adapters ≥0.1.0.
-        #
-        # WHY NOT get_tools()?
-        #   get_tools() internally creates asyncio tasks via asyncio.create_task(),
-        #   which never get scheduled when called from a thread-local event loop
-        #   (the pattern we use to isolate Streamlit's event loop). This causes
-        #   it to hang indefinitely even though the MCP subprocess starts fine.
-        #
-        # WHY client.session()?
-        #   client.session("mongodb") opens a single persistent MCP session that
-        #   stays alive across the yield — so the agent can call tools on the
-        #   same connection without re-spawning npx on every tool call.
-        print(f"[DEBUG][mcp_client] ① Creating MultiServerMCPClient config={list(config.keys())} transport={transport_label}", flush=True)
         client = MultiServerMCPClient(config)
-        print(f"[DEBUG][mcp_client] ② Opening persistent session via client.session('mongodb')...", flush=True)
-        async with client.session("mongodb") as session:
-            print(f"[DEBUG][mcp_client] ③ Session open. Calling load_mcp_tools(session)...", flush=True)
-            tools = await load_mcp_tools(session)
-            print(f"[DEBUG][mcp_client] ④ Loaded {len(tools)} tools: {[t.name for t in tools]}", flush=True)
-            logger.info(
-                f"MongoDB MCP [{transport_label}]: "
-                f"loaded {len(tools)} tools: {[t.name for t in tools]}"
-            )
-            yield tools
-            print(f"[DEBUG][mcp_client] ⑤ Agent finished — session closing cleanly.", flush=True)
+        logger.debug("② Entering client.session('mongodb') — spawns npx subprocess...")
+        session_cm = client.session("mongodb")
+        session = await session_cm.__aenter__()
     except Exception as err:
-        import traceback as _tb
-        print(f"[DEBUG][mcp_client] ✗ EXCEPTION in run_with_mongodb_mcp_tools: {err}", flush=True)
-        print(_tb.format_exc(), flush=True)
-        logger.warning(
-            f"MongoDB MCP [{transport_label}] failed: {err}. "
-            "Agents will use pymongo fallback tools."
-        )
+        logger.error("✗ MCP connect failed [%s]: %s\n%s",
+                     transport_label, err, _tb.format_exc())
         yield []
+        return
+
+    # ── Phase 2: load tool definitions ──────────────────────────────────────
+    try:
+        logger.debug("③ Session open — calling load_mcp_tools(session)...")
+        tools = await load_mcp_tools(session)
+        logger.info("④ MCP [%s] loaded %d tools: %s",
+                    transport_label, len(tools), [t.name for t in tools])
+    except Exception as err:
+        logger.error("✗ load_mcp_tools failed [%s]: %s\n%s",
+                     transport_label, err, _tb.format_exc())
+        await session_cm.__aexit__(None, None, None)
+        yield []
+        return
+
+    # ── Phase 3: yield tools — session stays open for agent invocations ─────
+    # Any exception raised by the agent propagates naturally out of the
+    # @asynccontextmanager without triggering a second yield.
+    try:
+        yield tools
+        logger.debug("⑤ Agent finished — MCP session closing cleanly.")
+    finally:
+        await session_cm.__aexit__(None, None, None)
 
 
 # ── Sync helper (UI display only — tools not invocable after context exits) ───

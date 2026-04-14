@@ -431,25 +431,25 @@ async def _run_with_mcp(
     from tools.mongodb_mcp_client import run_with_mongodb_mcp_tools
 
     import time as _time
-    print(f"[DEBUG][metadata_agent] ➤ _run_with_mcp START | q={question[:60]!r} | session={session_id}", flush=True)
     t0 = _time.time()
+    logger.debug("➤ _run_with_mcp START | q=%r | session=%s", question[:60], session_id)
 
     ep = EpisodicMemory("metadata_agent", session_id)
     ep.add_turn("human", question)
-    print(f"[DEBUG][metadata_agent]   EpisodicMemory initialised ({_time.time()-t0:.1f}s)", flush=True)
+    logger.debug("  EpisodicMemory initialised (%.1fs)", _time.time() - t0)
 
-    print(f"[DEBUG][metadata_agent]   Entering run_with_mongodb_mcp_tools()...", flush=True)
+    logger.debug("  Entering run_with_mongodb_mcp_tools()...")
     async with run_with_mongodb_mcp_tools() as mcp_tools:
-        print(f"[DEBUG][metadata_agent]   run_with_mongodb_mcp_tools yielded {len(mcp_tools)} MCP tools ({_time.time()-t0:.1f}s)", flush=True)
+        logger.debug("  MCP tools yielded: %d (%.1fs)", len(mcp_tools), _time.time() - t0)
         mcp_available = len(mcp_tools) > 0
         all_tools = (mcp_tools + NATIVE_AMEX_TOOLS) if mcp_available else PYMONGO_FALLBACK_TOOLS
-        print(f"[DEBUG][metadata_agent]   Tool set: {'MCP+native' if mcp_available else 'pymongo fallback'} — {len(all_tools)} tools total", flush=True)
+        logger.debug("  Tool set: %s — %d tools total",
+                     "MCP+native" if mcp_available else "pymongo fallback", len(all_tools))
 
         agent = build_agent_with_tools(all_tools)
-        print(f"[DEBUG][metadata_agent]   LangGraph agent compiled ({_time.time()-t0:.1f}s)", flush=True)
+        logger.debug("  LangGraph agent compiled (%.1fs)", _time.time() - t0)
 
-        # Build message list:
-        #  [memory_context?]  [prior turns...]  [current question]
+        # Build message list: [memory_context?] [prior turns...] [current question]
         prior: list[BaseMessage] = list(history or [])
         if memory_context is not None:
             if not prior:
@@ -462,14 +462,15 @@ async def _run_with_mcp(
             "last_query_mql": "",
             "last_query_results": [],
         }
-        print(f"[DEBUG][metadata_agent]   State ready — {len(state['messages'])} messages. Calling agent.ainvoke()...", flush=True)
+        logger.debug("  State ready — %d messages. Calling agent.ainvoke()...",
+                     len(state["messages"]))
 
         result = await agent.ainvoke(state, {"recursion_limit": AGENT_RECURSION_LIMIT})
-        print(f"[DEBUG][metadata_agent]   agent.ainvoke() RETURNED ({_time.time()-t0:.1f}s total)", flush=True)
+        logger.debug("  agent.ainvoke() RETURNED (%.1fs total)", _time.time() - t0)
 
         final_msg = result["messages"][-1]
         answer = final_msg.content if hasattr(final_msg, "content") else str(final_msg)
-        print(f"[DEBUG][metadata_agent]   Answer length={len(answer)} chars", flush=True)
+        logger.debug("  Answer: %d chars", len(answer))
 
         ep.add_turn("ai", answer)
 
@@ -478,7 +479,7 @@ async def _run_with_mcp(
             if hasattr(msg, "tool_calls") and msg.tool_calls:
                 for tc in msg.tool_calls:
                     tool_calls_used.append(tc.get("name", "unknown"))
-        print(f"[DEBUG][metadata_agent]   Tools called: {tool_calls_used}", flush=True)
+        logger.debug("  Tools called: %s", tool_calls_used)
 
         return {
             "answer": answer,
@@ -513,80 +514,63 @@ def run_metadata_query(
                      First embedded-MCP run may take ~60 s (npx download).
     """
     import time as _time
-    print(f"[DEBUG][run_metadata_query] ▶ CALLED | q={question[:60]!r} | timeout={timeout}s", flush=True)
+    import sys
     t_start = _time.time()
+    logger.debug("▶ run_metadata_query CALLED | q=%r | timeout=%ds", question[:60], timeout)
 
     def _thread_target():
         """
         Run the async MCP coroutine in a brand-new event loop inside its own
         dedicated thread — isolating it from Streamlit's event loop.
 
-        Platform notes
-        ──────────────
-        Windows  : asyncio.new_event_loop() returns ProactorEventLoop (Python
-                   3.8+), which supports subprocess I/O natively. No extra setup.
-
-        Linux / Ubuntu : asyncio subprocess spawning from non-main threads
-                   requires a ThreadedChildWatcher so that SIGCHLD signals are
-                   routed to the correct thread's event loop.
-                   • Python <3.12  → attach asyncio.ThreadedChildWatcher
-                   • Python ≥3.12 → ThreadedChildWatcher was removed; the
-                     default watcher handles threads correctly out of the box.
+        Windows : ProactorEventLoop (default since Py 3.8) supports subprocess natively.
+        Linux   : ThreadedChildWatcher routes SIGCHLD to the thread's loop (Py <3.12).
+                  Python 3.12+ removed ThreadedChildWatcher; default policy works.
         """
-        import sys
-        print(f"[DEBUG][_thread_target] Thread started | platform={sys.platform} | py={sys.version.split()[0]}", flush=True)
+        logger.debug("  Thread started | platform=%s | py=%s", sys.platform, sys.version.split()[0])
         loop = asyncio.new_event_loop()
 
         if sys.platform != "win32":
-            # Linux/macOS: attach a ThreadedChildWatcher so asyncio subprocess
-            # streams work correctly when the loop runs in a non-main thread.
             try:
                 watcher = asyncio.ThreadedChildWatcher()   # removed in Py 3.12
                 asyncio.get_event_loop_policy().set_child_watcher(watcher)
                 watcher.attach_loop(loop)
-                print(f"[DEBUG][_thread_target] ThreadedChildWatcher attached (Python < 3.12)", flush=True)
+                logger.debug("  ThreadedChildWatcher attached (Python < 3.12)")
             except AttributeError:
-                # Python 3.12+: no explicit watcher needed; default policy works.
-                print(f"[DEBUG][_thread_target] No ThreadedChildWatcher needed (Python >= 3.12)", flush=True)
+                logger.debug("  No ThreadedChildWatcher needed (Python >= 3.12)")
 
         asyncio.set_event_loop(loop)
         try:
             result = loop.run_until_complete(
                 _run_with_mcp(question, session_id, history, memory_context)
             )
-            print(f"[DEBUG][_thread_target] loop.run_until_complete DONE ({_time.time()-t_start:.1f}s)", flush=True)
+            logger.debug("  loop.run_until_complete DONE (%.1fs)", _time.time() - t_start)
             return result
         except Exception as _e:
-            import traceback as _tb
-            print(f"[DEBUG][_thread_target] EXCEPTION: {_e}", flush=True)
-            print(_tb.format_exc(), flush=True)
+            logger.exception("  Thread EXCEPTION: %s", _e)
             raise
         finally:
             loop.close()
-            print(f"[DEBUG][_thread_target] Event loop closed", flush=True)
+            logger.debug("  Event loop closed")
 
     try:
-        print(f"[DEBUG][run_metadata_query] Submitting _thread_target to ThreadPoolExecutor...", flush=True)
+        logger.debug("  Submitting to ThreadPoolExecutor (timeout=%ds)...", timeout)
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(_thread_target)
-            print(f"[DEBUG][run_metadata_query] Waiting for future.result(timeout={timeout}s)...", flush=True)
             result = future.result(timeout=timeout)
-            print(f"[DEBUG][run_metadata_query] ✓ Got result in {_time.time()-t_start:.1f}s | mcp={result.get('mcp_tools_active')} | tools={result.get('tool_calls')}", flush=True)
+            logger.debug("✓ run_metadata_query done in %.1fs | mcp=%s | tools=%s",
+                         _time.time() - t_start,
+                         result.get("mcp_tools_active"),
+                         result.get("tool_calls"))
             return result
     except concurrent.futures.TimeoutError:
-        print(f"[DEBUG][run_metadata_query] ✗ TIMEOUT after {timeout}s — falling back to pymongo", flush=True)
-        logger.warning(
-            f"run_metadata_query timed out after {timeout}s — falling back to pymongo tools."
-        )
+        logger.warning("✗ run_metadata_query TIMEOUT after %ds — falling back to pymongo", timeout)
         return _run_pymongo_fallback(
             question, session_id, history,
-            error=f"Agent timed out after {timeout}s (MCP subprocess may still be starting up). Using pymongo fallback.",
+            error=f"Agent timed out after {timeout}s. Using pymongo fallback.",
         )
     except Exception as e:
-        import traceback as _tb
-        print(f"[DEBUG][run_metadata_query] ✗ EXCEPTION: {e}", flush=True)
-        print(_tb.format_exc(), flush=True)
-        logger.warning(f"run_metadata_query thread error: {e} — falling back to pymongo tools.")
+        logger.exception("✗ run_metadata_query EXCEPTION: %s — falling back to pymongo", e)
         return _run_pymongo_fallback(question, session_id, history, error=str(e))
 
 
