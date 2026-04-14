@@ -14,7 +14,21 @@ st.set_page_config(page_title="Fraud Intelligence | VaultIQ", page_icon="🚨", 
 st.markdown("""
 <style>
   [data-testid="stSidebar"] { background: linear-gradient(180deg,#003087 0%,#006FCF 100%); }
-  [data-testid="stSidebar"] * { color: white !important; }
+  [data-testid="stSidebar"] > div > div > div > * { color: white !important; }
+  /* Fix contrast inside sidebar expanders — dark text on white panel */
+  [data-testid="stSidebar"] [data-testid="stExpander"] details {
+    background: rgba(255,255,255,0.95); border-radius: 8px;
+  }
+  [data-testid="stSidebar"] [data-testid="stExpander"] summary span,
+  [data-testid="stSidebar"] [data-testid="stExpander"] summary svg { color: #003087 !important; }
+  [data-testid="stSidebar"] [data-testid="stExpander"] [data-testid="stMarkdownContainer"],
+  [data-testid="stSidebar"] [data-testid="stExpander"] [data-testid="stMarkdownContainer"] *,
+  [data-testid="stSidebar"] [data-testid="stExpander"] p,
+  [data-testid="stSidebar"] [data-testid="stExpander"] code,
+  [data-testid="stSidebar"] [data-testid="stExpander"] small { color: #1a1a2e !important; }
+  [data-testid="stSidebar"] [data-testid="stExpander"] code {
+    background: #e8ecf1; padding: 1px 5px; border-radius: 3px; font-size: .82rem;
+  }
   .page-header { background: linear-gradient(135deg,#8B0000,#c0392b); padding:1.5rem 2rem;
     border-radius:10px; margin-bottom:1.2rem; }
   .page-header h2 { color:white; margin:0; } .page-header p { color:rgba(255,255,255,.88); margin:.3rem 0 0; }
