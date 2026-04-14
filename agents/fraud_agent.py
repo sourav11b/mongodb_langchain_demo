@@ -81,9 +81,11 @@ def get_recent_transactions(cardholder_id: str, limit: int = 10) -> str:
     lines = [f"Last {len(txns)} transactions for {cardholder_id}:"]
     for t in txns:
         flag = "🚨 FLAGGED" if t.get("is_flagged") else ""
+        ts = t.get("timestamp", "?")
+        ts_str = ts.strftime("%Y-%m-%d %H:%M:%S") if hasattr(ts, "strftime") else str(ts)[:19]
         lines.append(
-            f"  {t.get('timestamp','?')[:19]} | ${t.get('amount',0):>10.2f} | "
-            f"{t.get('merchant_name','?')[:25]:<25} | {t.get('channel','?'):<12} | "
+            f"  {ts_str} | ${t.get('amount',0):>10.2f} | "
+            f"{str(t.get('merchant_name','?'))[:25]:<25} | {str(t.get('channel','?')):<12} | "
             f"Score:{t.get('fraud_score',0):.3f} | {t.get('status','?')} {flag}"
         )
     return "\n".join(lines)
@@ -104,7 +106,7 @@ def get_flagged_transactions(min_fraud_score: float = 0.65, limit: int = 15) -> 
     for t in txns:
         lines.append(
             f"  🚨 {t.get('cardholder_id')} | ${t.get('amount',0):>9.2f} | "
-            f"{t.get('merchant_name','?')[:20]:<20} | Score:{t.get('fraud_score',0):.3f} | "
+            f"{str(t.get('merchant_name','?'))[:20]:<20} | Score:{t.get('fraud_score',0):.3f} | "
             f"IP:{t.get('ip_country','?')} | {t.get('channel','?')}"
         )
     return "\n".join(lines)
