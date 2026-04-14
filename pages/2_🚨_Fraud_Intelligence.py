@@ -1,0 +1,218 @@
+"""
+Page 2: Fraud Intelligence — Autonomous Multi-Step Fraud Detection Agent
+"""
+
+import streamlit as st
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+st.set_page_config(page_title="Fraud Intelligence | VaultIQ", page_icon="🚨", layout="wide")
+
+st.markdown("""
+<style>
+  [data-testid="stSidebar"] { background: linear-gradient(180deg,#003087 0%,#006FCF 100%); }
+  [data-testid="stSidebar"] * { color: white !important; }
+  .page-header { background: linear-gradient(135deg,#8B0000,#c0392b); padding:1.5rem 2rem;
+    border-radius:10px; margin-bottom:1.2rem; }
+  .page-header h2 { color:white; margin:0; } .page-header p { color:rgba(255,255,255,.88); margin:.3rem 0 0; }
+  .tool-badge { background:#FFF0F0; color:#c0392b; border-radius:6px; padding:2px 10px;
+    font-size:.8rem; font-weight:600; display:inline-block; margin:2px; }
+  .memory-box { background:#FFF8E7; border-left:4px solid #B5A06A; padding:.8rem 1rem; border-radius:6px; font-size:.88rem; }
+  .answer-box { background:#FFF5F5; border:1px solid #F5C6CB; border-radius:10px; padding:1.2rem 1.5rem; }
+  .step-box { background:#F8F9FA; border:1px solid #DEE2E6; border-radius:8px; padding:1rem; margin:.5rem 0; }
+  .alert-red { background:#FFE4E1; border-left:4px solid #e74c3c; padding:.8rem 1rem; border-radius:6px; }
+  .blog-feature-tag {
+    display:inline-block; padding:.18rem .65rem; border-radius:20px;
+    font-size:.73rem; font-weight:700; margin:.15rem; border:1.5px solid;
+  }
+  .bft-vector { background:#dbeafe; color:#1d4ed8; border-color:#93c5fd; }
+  .bft-hybrid { background:#d1fae5; color:#065f46; border-color:#6ee7b7; }
+  .bft-mql    { background:#fef3c7; color:#92400e; border-color:#fcd34d; }
+  .bft-ckpt   { background:#ede9fe; color:#5b21b6; border-color:#c4b5fd; }
+  .bft-smith  { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+  .blog-note  { background:#f8faff; border:1px solid #c8d8f0; border-left:4px solid #c0392b;
+    border-radius:6px; padding:.55rem .9rem; font-size:.82rem; color:#334; margin:.4rem 0; }
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="page-header">
+  <h2>🚨 Use Case 2: Fraud Intelligence Agent</h2>
+  <p>Autonomous multi-step fraud detection, investigation, and remediation — zero human intervention required</p>
+  <p style="margin-top:.6rem;">
+    <span class="blog-feature-tag bft-vector">🔵 Atlas Vector Search</span>
+    <span class="blog-feature-tag bft-ckpt">🟣 MongoDB Checkpointer</span>
+    <span class="blog-feature-tag bft-smith">🔴 LangSmith Observability</span>
+    &nbsp;<a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank" style="color:rgba(255,255,255,.75);font-size:.78rem;">📄 Partnership blog →</a>
+  </p>
+</div>
+""", unsafe_allow_html=True)
+
+# ── Info Columns ───────────────────────────────────────────────────────────────
+col_info, col_mem = st.columns([2, 1])
+with col_info:
+    st.markdown("**Autonomous Investigation Pipeline:**")
+    steps = [
+        ("1. Detect", "Scan transaction time-series for fraud scores ≥ 0.70, velocity anomalies"),
+        ("2. Investigate", "Cross-reference cardholder profile, geo-velocity impossible travel"),
+        ("3. Network Check", "$graphLookup to detect merchant fraud ring connections (depth ≤ 2)"),
+        ("4. External Verify", "FastMCP: OFAC sanctions screening, merchant risk check"),
+        ("5. Remediate", "FastMCP: Block card, send notification, file SAR if warranted"),
+        ("6. Report", "Generate structured investigation summary with all evidence"),
+    ]
+    for label, desc in steps:
+        st.markdown(f"**{label}** — {desc}")
+
+    st.markdown("**MCP Tools (mock external APIs):**")
+    for t in ["screen_sanctions","block_card","send_notification","file_sar","merchant_risk_check"]:
+        st.markdown(f'<span class="tool-badge">{t}</span>', unsafe_allow_html=True)
+
+with col_mem:
+    st.markdown('<div class="memory-box">', unsafe_allow_html=True)
+    st.markdown("**🧠 Memory Architecture**")
+    st.markdown("""
+**🧩 Episodic Memory**
+Each fraud investigation is stored in MongoDB with full audit trail of all actions taken.
+
+**🔧 Procedural Memory**
+Fraud playbooks (card-not-present, ATO, money laundering) guide the agent's step-by-step investigation.
+
+**⚡ Working Memory**
+LangGraph `FraudAgentState` carries `severity`, `actions_taken`, `fraud_type` across all reasoning steps.
+""")
+    st.markdown('</div>', unsafe_allow_html=True)
+
+st.markdown("---")
+
+# ── Blog feature callouts ──────────────────────────────────────────────────────
+st.markdown("""
+<div class="blog-note">
+  <span class="blog-feature-tag bft-vector">🔵 Blog Feature: Atlas Vector Search</span>
+  &nbsp; Fraud playbooks and case history are retrieved via <code>$vectorSearch</code> — semantic similarity over unstructured compliance documents.
+  &nbsp;&nbsp;
+  <span class="blog-feature-tag bft-ckpt">🟣 Blog Feature: MongoDB Checkpointer</span>
+  &nbsp; LangGraph's <code>FraudAgentState</code> (severity · actions_taken · fraud_type) persists in MongoDB across every reasoning step — enabling crash recovery and full audit trails, exactly as described in the
+  <a href="https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/" target="_blank">LangChain × MongoDB blog</a>.
+  &nbsp;&nbsp;
+  <span class="blog-feature-tag bft-smith">🔴 Blog Feature: LangSmith Observability</span>
+  &nbsp; Every tool call, routing decision, and MongoDB retrieval is traced end-to-end in LangSmith.
+</div>
+""", unsafe_allow_html=True)
+
+# ── Controls ───────────────────────────────────────────────────────────────────
+st.markdown("### 🎯 Run Fraud Investigation")
+
+mode = st.radio(
+    "Investigation Mode:",
+    ["🔍 Full Network Scan", "👤 Specific Cardholder"],
+    horizontal=True,
+    key="fraud_mode_radio",
+)
+
+cardholder_id = None
+if mode == "👤 Specific Cardholder":
+    cardholder_id = st.selectbox(
+        "Select Cardholder:",
+        [f"CH_{i:04d}" for i in range(1, 21)],
+        index=0,
+        key="fraud_cardholder_select",
+    )
+
+session_id = st.text_input("Session ID:", value="fraud-session-1", key="fraud_session")
+
+col_btn, col_warn = st.columns([2, 3])
+with col_btn:
+    run_btn = st.button("🚨 Launch Autonomous Investigation", type="primary")
+with col_warn:
+    if mode == "🔍 Full Network Scan":
+        st.markdown('<div class="alert-red">⚠️ <strong>Full Scan Mode:</strong> Agent will autonomously investigate top-risk transactions and may block cards and file SARs (simulated).</div>', unsafe_allow_html=True)
+
+if run_btn:
+    with st.spinner("🤖 VaultShield running autonomous fraud investigation..."):
+        try:
+            from agents.fraud_agent import run_fraud_investigation
+            result = run_fraud_investigation(
+                trigger="scan" if mode == "🔍 Full Network Scan" else "cardholder",
+                cardholder_id=cardholder_id,
+                session_id=session_id,
+            )
+
+            st.markdown("### 📋 Investigation Report")
+            st.markdown(f'<div class="answer-box">{result["answer"]}</div>', unsafe_allow_html=True)
+
+            if result.get("tool_calls"):
+                st.markdown("### 🔧 Agent Actions Taken")
+                tc_list = result["tool_calls"]
+                # Categorise
+                detect_tools = [t for t in tc_list if "transaction" in t or "flagged" in t or "velocity" in t or "trend" in t]
+                invest_tools = [t for t in tc_list if "profile" in t or "merchant" in t or "playbook" in t]
+                action_tools = [t for t in tc_list if "mcp" in t or "block" in t or "sar" in t or "notify" in t]
+
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.markdown("**🔍 Detection**")
+                    for t in detect_tools: st.success(f"✓ {t}")
+                with c2:
+                    st.markdown("**🔎 Investigation**")
+                    for t in invest_tools: st.info(f"✓ {t}")
+                with c3:
+                    st.markdown("**⚡ Actions**")
+                    for t in action_tools: st.warning(f"⚡ {t}")
+
+            # Show message trace
+            with st.expander("🔍 Full Agent Trace (All Tool Calls & Responses)"):
+                for msg in result.get("messages", []):
+                    if hasattr(msg, "tool_calls") and msg.tool_calls:
+                        for tc in msg.tool_calls:
+                            st.markdown(f"**🔧 Tool Call:** `{tc.get('name','?')}`")
+                            st.json(tc.get("args", {}))
+                    elif msg.type == "tool":
+                        with st.container():
+                            st.markdown(f"**📤 Tool Result:**")
+                            st.code(str(msg.content)[:500], language="text")
+
+        except Exception as e:
+            st.error(f"Agent error: {e}")
+            st.info("Ensure .env is configured and MongoDB is seeded.")
+
+# ── How it works ───────────────────────────────────────────────────────────────
+st.markdown("---")
+with st.expander("🏗️ Architecture — Fraud Agent Reasoning Graph"):
+    st.markdown("""
+```
+                    ┌─────────────────────────────────────┐
+                    │         FraudAgentState              │
+                    │  messages · case_id · severity       │
+                    │  actions_taken · fraud_type          │
+                    └─────────────────────────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │   [Agent Node]     │  ← Azure GPT-4o
+                    │   VaultShield LLM   │    reads playbook
+                    └─────────┬──────────┘    (Procedural Memory)
+              tool_calls?     │  no tool_calls
+         ┌───────────────────►│◄────────────────────── END
+         │           ┌────────┘
+         │           ▼
+         │  ┌─────────────────────────────────────────────┐
+         │  │              [Tool Node]                    │
+         │  │  MongoDB Tools:                             │
+         │  │    get_flagged_transactions (time-series)   │
+         │  │    check_transaction_velocity               │
+         │  │    check_merchant_fraud_ring ($graphLookup) │
+         │  │    timeseries_fraud_trend (aggregation)     │
+         │  │  FastMCP Tools:                             │
+         │  │    mcp_screen_sanctions → OFAC API         │
+         │  │    mcp_block_card → NFG Card System       │
+         │  │    mcp_file_sar → FinCEN SAR Portal        │
+         │  │    mcp_send_notification → Push/SMS        │
+         │  └─────────────────────────────────────────────┘
+         │           │
+         └───────────┘  (loops until no more tool calls)
+```
+**MongoDB query patterns used:**
+- `$match` + `$sort` on `fraud_score` and `timestamp` (time-series)
+- `$graphLookup` on `merchant_networks` (depth ≤ 2) for fraud ring detection
+- `$group` + `$dateToString` for daily fraud trend aggregation
+- All case history written to `conversation_history` (Episodic Memory)
+""")
