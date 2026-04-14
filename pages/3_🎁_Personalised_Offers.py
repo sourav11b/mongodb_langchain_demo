@@ -135,7 +135,8 @@ st.markdown("**💡 Quick starts:**")
 ex_cols = st.columns(3)
 for i, ep in enumerate(EXAMPLE_PROMPTS):
     if ex_cols[i % 3].button(ep[:40] + "...", key=f"ep_{i}", use_container_width=True):
-        st.session_state["offers_input"] = ep
+        st.session_state["_offers_auto_send"] = ep
+        st.rerun()
 
 # ── Chat Display ───────────────────────────────────────────────────────────────
 chat_container = st.container()
@@ -152,15 +153,16 @@ with chat_container:
 with st.form("offers_form", clear_on_submit=True):
     user_input = st.text_input(
         "Your message:",
-        value=st.session_state.get("offers_input", ""),
         placeholder="Ask about offers, spending, rewards...",
         key="offers_input_field",
     )
     submitted = st.form_submit_button("Send 💬", use_container_width=True)
 
-if submitted and user_input.strip():
-    st.session_state.offers_messages.append({"role": "user", "content": user_input})
-    st.session_state["offers_input"] = ""
+_auto_send = st.session_state.pop("_offers_auto_send", None)
+question_raw = _auto_send or (user_input.strip() if submitted else "")
+if question_raw:
+    st.session_state.offers_messages.append({"role": "user", "content": question_raw})
+    user_input = question_raw
 
     with st.spinner("🤖 Concierge is finding your personalised offers..."):
         try:

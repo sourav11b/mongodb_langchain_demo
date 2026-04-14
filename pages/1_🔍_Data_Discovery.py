@@ -214,7 +214,8 @@ if not st.session_state.disco_messages:
     ex_cols = st.columns(4)
     for i, eq in enumerate(EXAMPLE_QUERIES):
         if ex_cols[i % 4].button(eq[:38] + "…", key=f"qs_{i}", use_container_width=True):
-            st.session_state["_disco_prefill"] = eq
+            st.session_state["_disco_auto_send"] = eq
+            st.rerun()
 
 # ── Render existing chat bubbles ───────────────────────────────────────────────
 for turn in st.session_state.disco_messages:
@@ -250,7 +251,6 @@ with st.form("disco_chat_form", clear_on_submit=True):
     with inp_col:
         user_input = st.text_input(
             "Message",
-            value=st.session_state.pop("_disco_prefill", ""),
             placeholder="Ask about any NFG dataset, schema, or data pattern…",
             label_visibility="collapsed",
         )
@@ -274,10 +274,12 @@ with act_c3:
     )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# SEND MESSAGE handler
+# SEND MESSAGE handler (form submit OR quick-start auto-send)
 # ══════════════════════════════════════════════════════════════════════════════
-if send and user_input.strip():
-    question = user_input.strip()
+_auto_send = st.session_state.pop("_disco_auto_send", None)
+question_raw = _auto_send or (user_input.strip() if send else "")
+if question_raw:
+    question = question_raw
     from agents.metadata_agent import run_metadata_query
     from memory.mongodb_memory import SessionMemoryStore
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
