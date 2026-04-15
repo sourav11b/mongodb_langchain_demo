@@ -24,8 +24,19 @@ st.set_page_config(page_title="Data Discovery | VaultIQ", page_icon="🔍", layo
 st.markdown("""
 <style>
   [data-testid="stSidebar"] { background: linear-gradient(180deg,#003087 0%,#006FCF 100%); }
-  [data-testid="stSidebar"] * { color: white !important; }
+  [data-testid="stSidebar"] > div > div > div > * { color: white !important; }
   [data-testid="stSidebar"] hr { border-color: rgba(255,255,255,.2); }
+  [data-testid="stSidebar"] [data-testid="stExpander"] details { background:rgba(255,255,255,.95); border-radius:8px; }
+  [data-testid="stSidebar"] [data-testid="stExpander"] summary span,
+  [data-testid="stSidebar"] [data-testid="stExpander"] summary svg { color:#003087 !important; }
+  [data-testid="stSidebar"] [data-testid="stExpander"] p,
+  [data-testid="stSidebar"] [data-testid="stExpander"] span:not(summary span),
+  [data-testid="stSidebar"] [data-testid="stExpander"] code,
+  [data-testid="stSidebar"] [data-testid="stExpander"] small { color:#1a1a2e !important; }
+  [data-testid="stSidebar"] [data-testid="stExpander"] code { background:#e8ecf1; padding:1px 5px; border-radius:3px; }
+  [data-testid="stSidebar"] [data-baseweb="select"] * { color:#1a1a2e !important; }
+  [data-testid="stSidebar"] [data-testid="stTextInput"] input { color:#1a1a2e !important; }
+  [data-testid="stSidebar"] .stAlert p, [data-testid="stSidebar"] .stAlert span { color:#1a1a2e !important; }
   .page-header {
     background: linear-gradient(135deg,#003087,#006FCF);
     padding:1.5rem 2rem; border-radius:10px; margin-bottom:1rem;
