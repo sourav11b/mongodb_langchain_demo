@@ -104,52 +104,89 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ── Atlas Cluster Health Check (runs once per session) ─────────────────────────
-from tools.atlas_cluster import is_configured as _atlas_configured, get_cluster_status, resume_cluster, wait_for_ready
+from tools.atlas_cluster import (
+    is_configured as _atlas_configured,
+    get_cluster_status, resume_cluster, wait_for_ready,
+)
+from pymongo import MongoClient as _HealthCheckClient
+from pymongo.errors import ConnectionFailure as _ConnFail, ServerSelectionTimeoutError as _SSTimeout
+from config import MONGODB_URI
 
 if "atlas_checked" not in st.session_state:
     st.session_state.atlas_checked = False
 
-if not st.session_state.atlas_checked and _atlas_configured():
-    status = get_cluster_status()
-    logger.info("Atlas cluster check: %s", status)
+if not st.session_state.atlas_checked:
+    # ── Step 1: direct pymongo ping (works without Atlas API) ──────────────
+    _cluster_reachable = False
+    try:
+        _hc = _HealthCheckClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        _hc.admin.command("ping")
+        _cluster_reachable = True
+        _hc.close()
+        logger.info("Atlas cluster ping OK — cluster is reachable")
+    except (_ConnFail, _SSTimeout, Exception) as _ping_err:
+        logger.warning("Atlas cluster ping FAILED: %s", _ping_err)
 
-    if status.get("paused"):
-        st.warning("⏸️ **Atlas cluster is paused.** Auto-resuming…", icon="⏸️")
-        with st.status("🔄 Restarting Atlas cluster…", expanded=True) as atlas_status:
-            atlas_status.write(f"Cluster **{status.get('name')}** is paused. Sending resume request…")
-            resume_result = resume_cluster()
-            if resume_result.get("error"):
-                atlas_status.update(label=f"❌ Failed to resume: {resume_result['error']}", state="error")
-                st.error(f"Could not resume cluster: {resume_result['error']}")
-                st.stop()
-            atlas_status.write("✅ Resume request accepted. Waiting for cluster to become ready…")
-            atlas_status.write("_This typically takes 1–3 minutes for M0/M10, longer for larger tiers._")
-            ready = wait_for_ready(max_wait=300, poll_interval=15)
-            if ready.get("stateName") == "IDLE":
-                atlas_status.update(
-                    label=f"✅ Atlas cluster ready ({ready.get('elapsed', '?')}s)",
-                    state="complete", expanded=False,
-                )
-                st.session_state.atlas_checked = True
-                st.toast(f"Atlas cluster resumed in {ready.get('elapsed')}s ✅", icon="🍃")
-            else:
-                atlas_status.update(
-                    label=f"⚠️ Cluster not ready: {ready.get('stateName')} ({ready.get('elapsed', '?')}s)",
-                    state="error",
-                )
-                st.error(
-                    f"Cluster state: **{ready.get('stateName')}** after {ready.get('elapsed')}s. "
-                    "Please check Atlas console manually."
-                )
-                st.stop()
-    elif status.get("error"):
-        logger.warning("Atlas health check error (non-fatal): %s", status.get("error"))
-        st.session_state.atlas_checked = True  # don't block the app
-    else:
-        logger.info("Atlas cluster is running: stateName=%s", status.get("stateName"))
+    if _cluster_reachable:
+        # Cluster is up — nothing to do
         st.session_state.atlas_checked = True
-elif not _atlas_configured():
-    st.session_state.atlas_checked = True  # skip if API not configured
+
+    elif _atlas_configured():
+        # ── Step 2: cluster unreachable + API configured → check & resume ──
+        status = get_cluster_status()
+        logger.info("Atlas API cluster status: %s", status)
+
+        if status.get("paused"):
+            with st.status("⏸️ Atlas cluster is paused — auto-resuming…", expanded=True) as atlas_status:
+                atlas_status.write(f"Cluster **{status.get('name')}** is paused. Sending resume request…")
+                resume_result = resume_cluster()
+                if resume_result.get("error"):
+                    atlas_status.update(label=f"❌ Failed to resume: {resume_result['error']}", state="error")
+                    st.stop()
+                atlas_status.write("✅ Resume request accepted. Waiting for cluster to become ready…")
+                atlas_status.write("_This typically takes 1–3 minutes for M0/M10, longer for larger tiers._")
+                ready = wait_for_ready(max_wait=300, poll_interval=15)
+                if ready.get("stateName") == "IDLE":
+                    atlas_status.update(
+                        label=f"✅ Atlas cluster ready ({ready.get('elapsed', '?')}s)",
+                        state="complete", expanded=False,
+                    )
+                    st.session_state.atlas_checked = True
+                    st.toast(f"Atlas cluster resumed in {ready.get('elapsed')}s ✅", icon="🍃")
+                else:
+                    atlas_status.update(
+                        label=f"⚠️ Cluster not ready: {ready.get('stateName')}",
+                        state="error",
+                    )
+                    st.stop()
+        else:
+            # API says not paused but pymongo can't reach it — network/firewall issue
+            st.error(
+                f"🔌 **Cannot reach Atlas cluster.**\n\n"
+                f"Atlas API says cluster state is **{status.get('stateName', 'UNKNOWN')}** (not paused), "
+                f"but pymongo ping failed.\n\n"
+                f"**Check:**\n"
+                f"- Is your IP address in the Atlas Network Access allowlist?\n"
+                f"- Is `MONGODB_URI` correct in `.env`?\n"
+                f"- Is there a firewall/VPN blocking port 27017?"
+            )
+            st.stop()
+
+    else:
+        # ── Step 3: cluster unreachable + no API → show manual instructions ──
+        st.error(
+            "🔌 **Cannot connect to MongoDB Atlas cluster.**\n\n"
+            f"```\n{str(_ping_err)[:300]}\n```\n\n"
+            "**The cluster may be paused.** To auto-resume on startup, add these to `.env`:\n"
+            "```\n"
+            "ATLAS_API_CLIENT_ID=your-service-account-client-id\n"
+            "ATLAS_API_CLIENT_SECRET=your-service-account-client-secret\n"
+            "ATLAS_API_PROJECT_ID=your-atlas-project-id\n"
+            "ATLAS_API_CLUSTER_NAME=your-cluster-name\n"
+            "```\n\n"
+            "Or resume manually at [cloud.mongodb.com](https://cloud.mongodb.com)."
+        )
+        st.stop()
 
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
