@@ -50,7 +50,7 @@ class TestOffersQuickStartPrompts:
     def test_qs_offer_search(self, mock_db, mock_sem_mem):
         mock_sem_mem.search_offers.return_value = [
             {"merchant_name": "The Capital Grille", "city": "New York",
-             "benefit_text": "3x points on dining", "category": "Dining",
+             "benefit_text": "3x points on Restaurant", "category": "Restaurant",
              "valid_until": "2026-12-31", "merchant_id": "MER_0010"},
         ]
         mock_db.merchants.find_one.return_value = None
@@ -58,17 +58,39 @@ class TestOffersQuickStartPrompts:
              patch("agents.offers_agent._sem_mem", mock_sem_mem):
             from agents.offers_agent import find_relevant_offers
             result = find_relevant_offers.invoke(
-                {"query": "dining and entertainment offers", "card_tier": "Platinum"}
+                {"query": "Restaurant and Entertainment offers", "card_tier": "Platinum"}
             )
             assert isinstance(result, str)
             assert "Capital Grille" in result
             assert "1 offers" in result
 
+    # ── 🔵 Vector Search fallback (when embeddings missing) ──
+    def test_qs_offer_search_keyword_fallback(self, mock_db, mock_sem_mem):
+        """When vector search returns nothing, keyword-OR regex fallback fires."""
+        mock_sem_mem.search_offers.return_value = []
+        fallback_offers = [
+            {"merchant_name": "Regal Cinemas", "benefit_text": "2x points on Entertainment",
+             "category": "Entertainment", "valid_until": "2026-12-31",
+             "merchant_id": "MER_0015"},
+        ]
+        offers_coll = _mock_coll(docs=fallback_offers)
+        mock_db.offers = offers_coll
+        with patch("agents.offers_agent._db", mock_db), \
+             patch("agents.offers_agent._sem_mem", mock_sem_mem):
+            from agents.offers_agent import find_relevant_offers
+            result = find_relevant_offers.invoke(
+                {"query": "Restaurant and Entertainment offers", "card_tier": "Platinum"}
+            )
+            assert isinstance(result, str)
+            assert "Regal Cinemas" in result
+            call_args = offers_coll.find.call_args
+            assert "$or" in str(call_args)
+
     # ── 🟢 Hybrid Search: hybrid_search_offers ──
     def test_qs_hybrid_search(self, mock_db, mock_sem_mem):
         offers_coll = _mock_coll(docs=[
-            {"merchant_name": "Marriott Bonvoy", "benefit_text": "Free hotel upgrade",
-             "category": "Travel"},
+            {"merchant_name": "Marriott Bonvoy", "benefit_text": "5x points on Hotel stays",
+             "category": "Hotel"},
         ])
         mock_db.offers = offers_coll
         with patch("agents.offers_agent._db", mock_db), \
@@ -76,18 +98,18 @@ class TestOffersQuickStartPrompts:
              patch("agents.offers_agent.embed_texts", return_value=[[0.1]*1024]):
             from agents.offers_agent import hybrid_search_offers
             result = hybrid_search_offers.invoke(
-                {"query": "travel rewards with hotel upgrades", "category": "Travel"}
+                {"query": "cashback or points multiplier at Travel and Hotel merchants", "category": "Hotel"}
             )
             assert isinstance(result, str)
-            assert "Marriott Bonvoy" in result or "hotel upgrade" in result
+            assert "Marriott Bonvoy" in result or "Hotel" in result
 
     # ── 📍 Geospatial: find_nearby_offers ──
     def test_qs_nearby_offers(self, mock_db):
         merchants = [
-            {"merchant_id": "MER_0020", "name": "Joe's Pizza", "category": "Dining"},
+            {"merchant_id": "MER_0020", "name": "Dishoom", "category": "Restaurant"},
         ]
         offers = [
-            {"merchant_name": "Joe's Pizza", "category": "Dining",
+            {"merchant_name": "Dishoom", "category": "Restaurant",
              "benefit_text": "10% cashback", "valid_until": "2026-09-30",
              "merchant_id": "MER_0020"},
         ]
@@ -104,10 +126,10 @@ class TestOffersQuickStartPrompts:
         with patch("agents.offers_agent._db", mock_db):
             from agents.offers_agent import find_nearby_offers
             result = find_nearby_offers.invoke(
-                {"longitude": -73.985, "latitude": 40.758, "radius_km": 3.0}
+                {"longitude": -0.0235, "latitude": 51.5054, "radius_km": 5.0}
             )
             assert isinstance(result, str)
-            assert "Joe's Pizza" in result
+            assert "Dishoom" in result
             assert "1 offers" in result
 
     # ── 💰 Spending: get_spending_summary ──

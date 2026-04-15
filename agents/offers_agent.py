@@ -64,10 +64,19 @@ def find_relevant_offers(query: str, card_tier: str | None = None, limit: int = 
     """Semantic search for offers matching the cardholder's query and tier."""
     results = _sem_mem.search_offers(query, card_tier=card_tier, limit=limit)
     if not results:
-        # Fallback text search
+        # Fallback: keyword-OR text search across benefit_text, category, merchant_name
+        stop = {"the","a","an","and","or","of","in","for","to","with","on","by","is","are","my","me","all"}
+        words = [w for w in query.split() if w.lower() not in stop and len(w) > 2]
         filt: dict = {}
         if card_tier:
             filt["eligible_tiers"] = card_tier
+        if words:
+            pattern = "|".join(words)
+            filt["$or"] = [
+                {"benefit_text":  {"$regex": pattern, "$options": "i"}},
+                {"category":      {"$regex": pattern, "$options": "i"}},
+                {"merchant_name": {"$regex": pattern, "$options": "i"}},
+            ]
         results = list(_db.offers.find(filt, {"_id": 0, "embedding": 0}, limit=limit))
     if not results:
         return "No offers found matching your search."

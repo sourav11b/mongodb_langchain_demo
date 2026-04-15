@@ -65,6 +65,28 @@ class TestComplianceQuickStartPrompts:
             assert "BSA-001" in result or "BSA Currency" in result
             assert "1 found" in result
 
+    # ── 📋 Rule Lookup fallback (when embeddings missing) ──
+    def test_qs_rule_lookup_keyword_fallback(self, mock_db, mock_sem_mem):
+        mock_sem_mem.search_compliance_rules.return_value = []
+        fallback_doc = {
+            "rule_id": "KYC-001", "rule_name": "KYC Customer Due Diligence",
+            "category": "KYC", "jurisdiction": "USA",
+            "rule_text": "Know-Your-Customer verification required for all new accounts",
+            "tags": ["KYC", "AML", "due diligence"],
+        }
+        rules_coll = _mock_coll(docs=[fallback_doc])
+        mock_db.compliance_rules = rules_coll
+        with patch("agents.compliance_agent._db", mock_db), \
+             patch("agents.compliance_agent._sem_mem", mock_sem_mem):
+            from agents.compliance_agent import search_compliance_rules
+            result = search_compliance_rules.invoke(
+                {"query": "AML and Know-Your-Customer regulations applicable to high-value wire transfers"}
+            )
+            assert isinstance(result, str)
+            assert "KYC-001" in result or "KYC Customer" in result
+            call_args = rules_coll.find.call_args
+            assert "$or" in str(call_args)
+
     # ── 💰 BSA Thresholds: check_transaction_thresholds ──
     def test_qs_bsa_thresholds(self, mock_db):
         agg_results = [
@@ -84,10 +106,12 @@ class TestComplianceQuickStartPrompts:
 
     # ── 📡 Sanctions Exposure: check_sanctions_exposure ──
     def test_qs_sanctions_exposure(self, mock_db):
+        # Seed data sends high-fraud txns to HIGH_RISK countries (NG, RO, UA),
+        # not SANCTIONED countries (RU, IR, KP). Tool reports both tiers.
         txns = [
-            {"ip_country": "RU", "amount": 35000, "merchant_name": "Sevastopol Shipping",
+            {"ip_country": "NG", "amount": 35000, "merchant_name": "Lagos Electronics",
              "timestamp": "2026-04-01"},
-            {"ip_country": "IR", "amount": 12000, "merchant_name": "Tehran Trading Co",
+            {"ip_country": "RO", "amount": 12000, "merchant_name": "Bucharest Trading",
              "timestamp": "2026-04-02"},
             {"ip_country": "US", "amount": 500, "merchant_name": "Walmart",
              "timestamp": "2026-04-03"},
@@ -99,9 +123,9 @@ class TestComplianceQuickStartPrompts:
             from agents.compliance_agent import check_sanctions_exposure
             result = check_sanctions_exposure.invoke({"cardholder_id": "CH_0007"})
             assert isinstance(result, str)
-            assert "SANCTIONED COUNTRY" in result
-            assert "Sevastopol" in result or "Tehran" in result
-            assert "2 transactions" in result
+            assert "HIGH-RISK COUNTRY" in result
+            assert "Lagos Electronics" in result or "Bucharest" in result
+            assert "2" in result  # 2 high-risk txns
 
     # ── 🕸️ AML Network: aml_network_analysis ──
     def test_qs_aml_network(self, mock_db):

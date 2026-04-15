@@ -183,7 +183,7 @@ with tab2:
         # 💰 BSA Thresholds → check_transaction_thresholds
         ("💰 BSA Thresholds", "Check if this cardholder has breached the BSA $10,000 CTR or $5,000 SAR reporting thresholds"),
         # 📡 Sanctions Exposure → check_sanctions_exposure
-        ("📡 Sanctions", "Does this cardholder have transactions to OFAC-sanctioned countries like Russia, Iran, or North Korea?"),
+        ("📡 Sanctions", "Check this cardholder for transactions to high-risk or sanctioned countries such as Nigeria, Romania, or Ukraine"),
         # 🕸️ AML Network → aml_network_analysis
         ("🕸️ AML Network", "Run AML network analysis to detect layering through connected merchant networks"),
         # 📄 Case Notes → analyse_fraud_case_notes

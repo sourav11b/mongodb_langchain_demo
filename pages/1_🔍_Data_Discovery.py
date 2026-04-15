@@ -220,7 +220,7 @@ EXAMPLE_QUERIES = [
     # 🕸️ $graphLookup → graph_lookup_merchant_network
     ("🕸️ Graph Traverse", "Traverse the merchant network graph for merchant MER_0001 to depth 2"),
     # 📍 Geospatial → geo_query_nearby_merchants
-    ("📍 Geo Query", "Find dining restaurants within 3km of Times Square (longitude: -73.985, latitude: 40.758)"),
+    ("📍 Geo Query", "Find Restaurant merchants within 5km of Canary Wharf London (longitude: -0.0235, latitude: 51.5054)"),
 ]
 
 # ── Quick-start prompts (only when chat is empty) ──────────────────────────────

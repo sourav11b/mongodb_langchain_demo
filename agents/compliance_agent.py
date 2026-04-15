@@ -66,12 +66,20 @@ def search_compliance_rules(query: str, jurisdiction: str | None = None) -> str:
     """Semantic search over compliance rules — find applicable regulations."""
     results = _sem_mem.search_compliance_rules(query, limit=5)
     if not results:
-        filt: dict = {}
+        # Fallback: keyword-OR search across rule_text, tags, rule_name
+        stop = {"the","a","an","and","or","of","in","for","to","with","on","by","is","are","all","this"}
+        words = [w for w in query.split() if w.lower() not in stop and len(w) > 2]
+        pattern = "|".join(words) if words else query[:30]
+        filt: dict = {"$or": [
+            {"rule_text":  {"$regex": pattern, "$options": "i"}},
+            {"tags":       {"$regex": pattern, "$options": "i"}},
+            {"rule_name":  {"$regex": pattern, "$options": "i"}},
+            {"category":   {"$regex": pattern, "$options": "i"}},
+        ]}
         if jurisdiction:
             filt["jurisdiction"] = jurisdiction
         results = list(_db.compliance_rules.find(
-            {**filt, "rule_text": {"$regex": query[:30], "$options": "i"}},
-            {"_id": 0, "embedding": 0}, limit=5
+            filt, {"_id": 0, "embedding": 0}, limit=5
         ))
     if not results:
         return "No compliance rules found for this query."

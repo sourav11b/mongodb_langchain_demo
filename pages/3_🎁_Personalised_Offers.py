@@ -134,11 +134,11 @@ if "offers_tool_calls" not in st.session_state:
 # ── Feature-specific Quick Start prompts ───────────────────────────────────────
 EXAMPLE_PROMPTS = [
     # 🔵 Vector Search → find_relevant_offers
-    ("🔵 Offer Search", "Find dining and entertainment offers available for a Platinum card"),
+    ("🔵 Offer Search", "Find Restaurant and Entertainment offers available for a Platinum card"),
     # 🟢 Hybrid Search ($rankFusion) → hybrid_search_offers
-    ("🟢 Hybrid Search", "Search offers matching travel rewards with hotel upgrades in the Travel category"),
+    ("🟢 Hybrid Search", "Search offers with cashback or points multiplier at Travel and Hotel merchants"),
     # 📍 Geospatial → find_nearby_offers
-    ("📍 Nearby Offers", "Find restaurant offers within 3km of Times Square (longitude: -73.985, latitude: 40.758)"),
+    ("📍 Nearby Offers", "Find offers at Restaurant merchants within 5km of Canary Wharf London (longitude: -0.0235, latitude: 51.5054)"),
     # 💰 Spending Summary → get_spending_summary
     ("💰 Spending", "Show spending breakdown by category for cardholder CH_0001 over the last 30 days"),
     # 🎯 Points Estimate → get_points_estimate

@@ -377,13 +377,13 @@ class TestQuickStartPrompts:
             assert "Alpha Trading" in result
             assert "Beta Corp" in result or "Gamma Ltd" in result
 
-    # ── 📍 Geo Query: "Find dining restaurants within 3km of Times Square …" ──
+    # ── 📍 Geo Query: "Find Restaurant merchants within 5km of Canary Wharf London …" ──
     def test_qs_geo_query(self, mock_db):
         merchants = [
-            {"name": "Sushi Nakazawa", "category": "Dining",
-             "city": "New York", "nfg_preferred_partner": True},
-            {"name": "Le Bernardin", "category": "Dining",
-             "city": "New York", "nfg_preferred_partner": False},
+            {"name": "Dishoom", "category": "Restaurant",
+             "city": "London", "nfg_preferred_partner": True},
+            {"name": "The Ivy", "category": "Restaurant",
+             "city": "London", "nfg_preferred_partner": False},
         ]
         find_cursor = MagicMock()
         find_cursor.__iter__ = lambda self: iter(merchants)
@@ -392,14 +392,14 @@ class TestQuickStartPrompts:
         with patch("agents.metadata_agent._db", mock_db):
             from agents.metadata_agent import geo_query_nearby_merchants
             result = geo_query_nearby_merchants.invoke({
-                "longitude": -73.985,
-                "latitude": 40.758,
-                "radius_km": 3.0,
-                "category": "Dining",
+                "longitude": -0.0235,
+                "latitude": 51.5054,
+                "radius_km": 5.0,
+                "category": "Restaurant",
             })
             assert isinstance(result, str)
             assert len(result) > 0
-            assert "Sushi Nakazawa" in result or "Le Bernardin" in result
+            assert "Dishoom" in result or "The Ivy" in result
             assert "2 merchants" in result
             assert "Preferred Partner" in result
 
