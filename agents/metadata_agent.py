@@ -347,7 +347,7 @@ def geo_query_nearby_merchants(
 # Native VaultIQ tools: vector/hybrid search, graph traversal, geo — always present.
 # These have no equivalent in the MongoDB MCP server (they use Atlas Vector Search
 # and complex aggregations specific to the VaultIQ data model).
-NATIVE_AMEX_TOOLS = [
+NATIVE_NEXUS_TOOLS = [
     search_data_catalog,
     hybrid_search_catalog,
     graph_lookup_merchant_network,
@@ -357,7 +357,7 @@ NATIVE_AMEX_TOOLS = [
 # Pymongo fallback tools: used when the MongoDB MCP server is not running.
 # When MCP IS running, `find`/`aggregate`/`collection-schema` from the server
 # replace these with more capable, general-purpose equivalents.
-PYMONGO_FALLBACK_TOOLS = NATIVE_AMEX_TOOLS + [
+PYMONGO_FALLBACK_TOOLS = NATIVE_NEXUS_TOOLS + [
     inspect_collection_schema,
     execute_mql_query,
 ]
@@ -468,7 +468,7 @@ async def _run_with_mcp(
     async with run_with_mongodb_mcp_tools() as mcp_tools:
         logger.debug("  MCP tools yielded: %d (%.1fs)", len(mcp_tools), _time.time() - t0)
         mcp_available = len(mcp_tools) > 0
-        all_tools = (mcp_tools + NATIVE_AMEX_TOOLS) if mcp_available else PYMONGO_FALLBACK_TOOLS
+        all_tools = (mcp_tools + NATIVE_NEXUS_TOOLS) if mcp_available else PYMONGO_FALLBACK_TOOLS
         logger.debug("  Tool set: %s — %d tools total",
                      "MCP+native" if mcp_available else "pymongo fallback", len(all_tools))
 

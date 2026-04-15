@@ -241,7 +241,7 @@ col_mcp1, col_mcp2 = st.columns(2)
 with col_mcp1:
     st.markdown(f"**Server URL:** `{MCP_SERVER_URL}`")
     st.markdown("**Available Tools (mock external NFG APIs):**")
-    amex_mcp_tools = [
+    nexus_mcp_tools = [
         ("screen_sanctions", "OFAC SDN + global sanctions screening"),
         ("credit_bureau_lookup", "Experian/Equifax/TransUnion credit profile"),
         ("block_card", "Temporary hold or permanent card block"),
@@ -250,13 +250,13 @@ with col_mcp1:
         ("merchant_risk_check", "Chargeback ratio + fraud ring + ownership"),
         ("geo_velocity_check", "Impossible travel detection"),
     ]
-    for name, desc in amex_mcp_tools:
+    for name, desc in nexus_mcp_tools:
         st.markdown(f"  • **`{name}`** — {desc}")
 
 with col_mcp2:
     st.markdown("**Step 4: Start the Custom NFG FastMCP Server**")
     st.code("python -m tools.mcp_server", language="bash")
-    if st.button("🔌 Ping VaultIQ MCP Server", key="ping_amex_mcp"):
+    if st.button("🔌 Ping VaultIQ MCP Server", key="ping_nexus_mcp"):
         try:
             resp = httpx.get(f"{MCP_SERVER_URL}/", timeout=3)
             st.success(f"✅ VaultIQ MCP Server reachable (status {resp.status_code})")
