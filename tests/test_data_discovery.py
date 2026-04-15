@@ -219,6 +219,166 @@ class TestAgentTools:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# SECTION 1b — Quick Start prompt tests (one per highlighted feature)
+#
+# Each test invokes the tool that the corresponding Quick Start prompt would
+# trigger, using the exact values from the prompt, and verifies a non-empty,
+# meaningful result is returned.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class TestQuickStartPrompts:
+    """
+    One test per Quick Start button on the Data Discovery page.
+    Each test calls the underlying @tool function directly (mocked DB)
+    and asserts it returns a non-empty, feature-relevant result.
+    """
+
+    # ── 🔵 Vector Search: "Find datasets related to anti-money laundering …" ──
+    def test_qs_vector_search(self, mock_db, mock_sem_mem):
+        mock_sem_mem.search_data_catalog.return_value = [
+            {
+                "name": "Compliance & Regulatory Rules",
+                "dataset_id": "DS_006",
+                "collection": "compliance_rules",
+                "owner": "Legal & Compliance",
+                "description": "Repository of AML/KYC rules, regulatory requirements",
+                "schema_summary": "rule_id, rule_name, category, jurisdiction",
+                "sensitivity": "INTERNAL",
+                "sample_queries": ["What are the BSA reporting thresholds?"],
+            }
+        ]
+        with patch("agents.metadata_agent._db", mock_db), \
+             patch("agents.metadata_agent._sem_mem", mock_sem_mem):
+            from agents.metadata_agent import search_data_catalog
+            result = search_data_catalog.invoke(
+                {"query": "anti-money laundering and suspicious transaction monitoring"}
+            )
+            assert isinstance(result, str)
+            assert len(result) > 0
+            assert "DS_006" in result or "Compliance" in result
+
+    # ── 🟢 Hybrid Search: "Search the catalog for datasets containing fraud_score …" ──
+    def test_qs_hybrid_search(self, mock_db, mock_sem_mem):
+        hybrid_results = [
+            {"dataset_id": "DS_001", "name": "Transaction Ledger",
+             "description": "fraud_score, merchant details, geolocation"}
+        ]
+        # hybrid_search_catalog calls _db.data_catalog.aggregate(pipeline)
+        catalog_coll = _mock_coll(docs=hybrid_results)
+        mock_db.data_catalog = catalog_coll
+        with patch("agents.metadata_agent._db", mock_db), \
+             patch("agents.metadata_agent._sem_mem", mock_sem_mem):
+            from agents.metadata_agent import hybrid_search_catalog
+            result = hybrid_search_catalog.invoke(
+                {"query": "datasets containing fraud_score in the transactions collection"}
+            )
+            assert isinstance(result, str)
+            assert len(result) > 0
+            assert "Transaction Ledger" in result or "DS_001" in result
+
+    # ── 🟡 Text-to-MQL: "Show all Platinum cardholder transactions above $5000 …" ──
+    def test_qs_text_to_mql(self, mock_db):
+        docs = [
+            {"cardholder_id": "CH_0042", "amount": 7500.0,
+             "fraud_score": 0.85, "card_tier": "Platinum", "status": "approved"}
+        ]
+        mock_db.__getitem__ = MagicMock(return_value=_mock_coll(docs=docs))
+        with patch("agents.metadata_agent._db", mock_db):
+            from agents.metadata_agent import execute_mql_query
+            result = execute_mql_query.invoke({
+                "collection_name": "transactions",
+                "query_json": json.dumps({
+                    "filter": {
+                        "card_tier": "Platinum",
+                        "amount": {"$gt": 5000},
+                        "fraud_score": {"$gt": 0.7},
+                    }
+                }),
+                "limit": 10,
+            })
+            assert isinstance(result, str)
+            assert len(result) > 0
+            assert "CH_0042" in result
+            assert "1 documents" in result
+
+    # ── 📊 Schema Inspect: "Inspect the schema of the merchant_networks collection" ──
+    def test_qs_schema_inspect(self, mock_db):
+        doc = {
+            "node_id": "NODE_MER_0001", "merchant_id": "MER_0001",
+            "merchant_name": "Test Corp", "node_type": "merchant",
+            "cluster_id": 3, "risk_cluster_flag": True,
+            "edges": [{"target_merchant_id": "MER_0002", "relationship": "same_owner"}],
+        }
+        coll = _mock_coll(docs=[doc])
+        coll.count_documents.return_value = 120
+        mock_db.__getitem__ = MagicMock(return_value=coll)
+        with patch("agents.metadata_agent._db", mock_db):
+            from agents.metadata_agent import inspect_collection_schema
+            result = inspect_collection_schema.invoke(
+                {"collection_name": "merchant_networks"}
+            )
+            assert isinstance(result, str)
+            assert "merchant_networks" in result
+            assert "node_id" in result or "merchant_id" in result
+            assert "120" in result
+
+    # ── 🕸️ Graph Traverse: "Traverse the merchant network graph for MER_0001 …" ──
+    def test_qs_graph_lookup(self, mock_db):
+        agg_result = [{
+            "merchant_id": "MER_0001",
+            "merchant_name": "Alpha Trading LLC",
+            "cluster_id": 3,
+            "risk_cluster_flag": True,
+            "network_size": 2,
+            "network": [
+                {"merchant_id": "MER_0002", "merchant_name": "Beta Corp",
+                 "cluster_id": 3, "risk_cluster_flag": False},
+                {"merchant_id": "MER_0005", "merchant_name": "Gamma Ltd",
+                 "cluster_id": 4, "risk_cluster_flag": True},
+            ],
+        }]
+        coll = _mock_coll()
+        coll.aggregate.return_value = iter(agg_result)
+        mock_db.merchant_networks = coll
+        with patch("agents.metadata_agent._db", mock_db):
+            from agents.metadata_agent import graph_lookup_merchant_network
+            result = graph_lookup_merchant_network.invoke(
+                {"merchant_id": "MER_0001", "max_depth": 2}
+            )
+            assert isinstance(result, str)
+            assert len(result) > 0
+            assert "MER_0001" in result
+            assert "Alpha Trading" in result
+            assert "Beta Corp" in result or "Gamma Ltd" in result
+
+    # ── 📍 Geo Query: "Find dining restaurants within 3km of Times Square …" ──
+    def test_qs_geo_query(self, mock_db):
+        merchants = [
+            {"name": "Sushi Nakazawa", "category": "Dining",
+             "city": "New York", "nfg_preferred_partner": True},
+            {"name": "Le Bernardin", "category": "Dining",
+             "city": "New York", "nfg_preferred_partner": False},
+        ]
+        find_cursor = MagicMock()
+        find_cursor.__iter__ = lambda self: iter(merchants)
+        find_cursor.limit = MagicMock(return_value=find_cursor)
+        mock_db.merchants.find.return_value = find_cursor
+        with patch("agents.metadata_agent._db", mock_db):
+            from agents.metadata_agent import geo_query_nearby_merchants
+            result = geo_query_nearby_merchants.invoke({
+                "longitude": -73.985,
+                "latitude": 40.758,
+                "radius_km": 3.0,
+                "category": "Dining",
+            })
+            assert isinstance(result, str)
+            assert len(result) > 0
+            assert "Sushi Nakazawa" in result or "Le Bernardin" in result
+            assert "2 merchants" in result
+            assert "Preferred Partner" in result
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # SECTION 2 — Agent graph compilation & invocation
 # ══════════════════════════════════════════════════════════════════════════════
 

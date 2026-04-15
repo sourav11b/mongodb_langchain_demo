@@ -209,22 +209,26 @@ st.markdown("---")
 # ══════════════════════════════════════════════════════════════════════════════
 
 EXAMPLE_QUERIES = [
-    "Which datasets contain fraud-related information?",
-    "Show the schema of the transactions collection",
-    "Find all Platinum cardholder transactions above $5000 last month",
-    "What datasets have geospatial data?",
-    "Show spending by category for cardholder CH_0001",
-    "Which merchants are connected to fraud rings in the network graph?",
-    "Find restaurants within 5km of Times Square (lon: -73.985, lat: 40.758)",
-    "What are the top 5 highest fraud-score transactions?",
+    # 🔵 Atlas Vector Search → search_data_catalog
+    ("🔵 Vector Search", "Find datasets related to anti-money laundering and suspicious transaction monitoring"),
+    # 🟢 Hybrid Search ($rankFusion) → hybrid_search_catalog
+    ("🟢 Hybrid Search", "Search the catalog for datasets containing fraud_score in the transactions collection"),
+    # 🟡 Text-to-MQL → execute_mql_query / MCP find
+    ("🟡 Text-to-MQL", "Show all Platinum cardholder transactions above $5000 with a fraud_score greater than 0.7"),
+    # 📊 Schema Inspect → inspect_collection_schema
+    ("📊 Schema", "Inspect the schema of the merchant_networks collection"),
+    # 🕸️ $graphLookup → graph_lookup_merchant_network
+    ("🕸️ Graph Traverse", "Traverse the merchant network graph for merchant MER_0001 to depth 2"),
+    # 📍 Geospatial → geo_query_nearby_merchants
+    ("📍 Geo Query", "Find dining restaurants within 3km of Times Square (longitude: -73.985, latitude: 40.758)"),
 ]
 
 # ── Quick-start prompts (only when chat is empty) ──────────────────────────────
 if not st.session_state.disco_messages:
-    st.markdown("##### 💡 Try one of these to start:")
-    ex_cols = st.columns(4)
-    for i, eq in enumerate(EXAMPLE_QUERIES):
-        if ex_cols[i % 4].button(eq[:38] + "…", key=f"qs_{i}", use_container_width=True):
+    st.markdown("##### 💡 Try one of these to start — each highlights a different feature:")
+    ex_cols = st.columns(3)
+    for i, (label, eq) in enumerate(EXAMPLE_QUERIES):
+        if ex_cols[i % 3].button(label, key=f"qs_{i}", use_container_width=True, help=eq):
             st.session_state["_disco_auto_send"] = eq
             st.rerun()
 
