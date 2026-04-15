@@ -131,21 +131,27 @@ if "offers_messages" not in st.session_state:
 if "offers_tool_calls" not in st.session_state:
     st.session_state.offers_tool_calls = []
 
-# ── Example Prompts ────────────────────────────────────────────────────────────
+# ── Feature-specific Quick Start prompts ───────────────────────────────────────
 EXAMPLE_PROMPTS = [
-    "What dining offers are available for my Platinum card?",
-    "Find me travel rewards near New York (lon: -74.006, lat: 40.713)",
-    "Show my spending breakdown for the last 30 days",
-    "How many Membership Rewards points have I earned recently?",
-    "Any exclusive hotel offers expiring soon?",
-    "Find cashback offers at grocery stores",
+    # 🔵 Vector Search → find_relevant_offers
+    ("🔵 Offer Search", "Find dining and entertainment offers available for a Platinum card"),
+    # 🟢 Hybrid Search ($rankFusion) → hybrid_search_offers
+    ("🟢 Hybrid Search", "Search offers matching travel rewards with hotel upgrades in the Travel category"),
+    # 📍 Geospatial → find_nearby_offers
+    ("📍 Nearby Offers", "Find restaurant offers within 3km of Times Square (longitude: -73.985, latitude: 40.758)"),
+    # 💰 Spending Summary → get_spending_summary
+    ("💰 Spending", "Show spending breakdown by category for cardholder CH_0001 over the last 30 days"),
+    # 🎯 Points Estimate → get_points_estimate
+    ("🎯 Rewards Points", "How many Membership Rewards points has cardholder CH_0001 earned in the last 30 days?"),
+    # 👤 Cardholder Profile → get_cardholder_info
+    ("👤 Profile", "Show the full profile and preferences for cardholder CH_0003"),
 ]
 
 st.markdown("### 💬 Chat with VaultConcierge")
-st.markdown("**💡 Quick starts:**")
+st.markdown("**💡 Quick starts — each highlights a different feature:**")
 ex_cols = st.columns(3)
-for i, ep in enumerate(EXAMPLE_PROMPTS):
-    if ex_cols[i % 3].button(ep[:40] + "...", key=f"ep_{i}", use_container_width=True):
+for i, (label, ep) in enumerate(EXAMPLE_PROMPTS):
+    if ex_cols[i % 3].button(label, key=f"ep_{i}", use_container_width=True, help=ep):
         st.session_state["_offers_auto_send"] = ep
         st.rerun()
 

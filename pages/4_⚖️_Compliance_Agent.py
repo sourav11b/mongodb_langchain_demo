@@ -176,13 +176,37 @@ with tab2:
             height=80,
         )
 
+    # ── Feature-specific Quick Start prompts ───────────────────────────────
+    COMPLIANCE_PROMPTS = [
+        # 📋 Semantic rule lookup → search_compliance_rules
+        ("📋 Rule Lookup", "Search for AML and Know-Your-Customer regulations applicable to high-value wire transfers"),
+        # 💰 BSA Thresholds → check_transaction_thresholds
+        ("💰 BSA Thresholds", "Check if this cardholder has breached the BSA $10,000 CTR or $5,000 SAR reporting thresholds"),
+        # 📡 Sanctions Exposure → check_sanctions_exposure
+        ("📡 Sanctions", "Does this cardholder have transactions to OFAC-sanctioned countries like Russia, Iran, or North Korea?"),
+        # 🕸️ AML Network → aml_network_analysis
+        ("🕸️ AML Network", "Run AML network analysis to detect layering through connected merchant networks"),
+        # 📄 Case Notes → analyse_fraud_case_notes
+        ("📄 Case Notes", "Analyse open fraud case investigation notes for AML triggers and regulatory implications"),
+        # 📡 OFAC Screen → mcp_ofac_screen_compliance
+        ("📡 OFAC Screen", "Run OFAC sanctions screening on this cardholder's name and home country"),
+    ]
+    st.markdown("**💡 Quick starts — click to auto-fill:**")
+    qs_cols = st.columns(3)
+    for i, (label, prompt_text) in enumerate(COMPLIANCE_PROMPTS):
+        if qs_cols[i % 3].button(label, key=f"comp_qs_{i}", use_container_width=True, help=prompt_text):
+            st.session_state["_comp_auto_fill"] = prompt_text
+            st.rerun()
+
+    _auto_fill = st.session_state.pop("_comp_auto_fill", None)
+    effective_prompt = _auto_fill or (custom_prompt.strip() if custom_prompt.strip() else None)
+
     if st.button("🔍 Investigate Cardholder Compliance", type="primary"):
         with st.spinner(f"🤖 Reviewing {ch_id} for regulatory compliance..."):
             try:
                 from agents.compliance_agent import run_compliance_investigation
-                prompt = custom_prompt.strip() if custom_prompt.strip() else None
                 result = run_compliance_investigation(
-                    prompt=prompt,
+                    prompt=effective_prompt,
                     cardholder_id=ch_id,
                     session_id=f"comp-{ch_id}",
                 )
