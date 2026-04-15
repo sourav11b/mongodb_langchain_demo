@@ -99,9 +99,17 @@ def search_data_catalog(query: str) -> str:
     """Search the VaultIQ data catalog using semantic vector search to find relevant datasets."""
     results = _sem_mem.search_data_catalog(query, limit=4)
     if not results:
-        # Fallback: simple regex text search
+        # Fallback: keyword-OR text search across description + tags
+        stop = {"the","a","an","and","or","of","in","for","to","with","on","by","is","are","all"}
+        words = [w for w in query.split() if w.lower() not in stop and len(w) > 2]
+        pattern = "|".join(words) if words else query
         results = list(_db.data_catalog.find(
-            {"description": {"$regex": query, "$options": "i"}}, limit=4
+            {"$or": [
+                {"description": {"$regex": pattern, "$options": "i"}},
+                {"tags":        {"$regex": pattern, "$options": "i"}},
+                {"name":        {"$regex": pattern, "$options": "i"}},
+            ]},
+            limit=4,
         ))
     formatted = []
     for r in results:

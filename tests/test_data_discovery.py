@@ -233,29 +233,55 @@ class TestQuickStartPrompts:
     and asserts it returns a non-empty, feature-relevant result.
     """
 
-    # ── 🔵 Vector Search: "Find datasets related to anti-money laundering …" ──
+    # ── 🔵 Vector Search: "Find datasets related to fraud detection …" ──
     def test_qs_vector_search(self, mock_db, mock_sem_mem):
         mock_sem_mem.search_data_catalog.return_value = [
             {
-                "name": "Compliance & Regulatory Rules",
-                "dataset_id": "DS_006",
-                "collection": "compliance_rules",
-                "owner": "Legal & Compliance",
-                "description": "Repository of AML/KYC rules, regulatory requirements",
-                "schema_summary": "rule_id, rule_name, category, jurisdiction",
-                "sensitivity": "INTERNAL",
-                "sample_queries": ["What are the BSA reporting thresholds?"],
+                "name": "Transaction Ledger",
+                "dataset_id": "DS_001",
+                "collection": "transactions",
+                "owner": "Data Engineering",
+                "description": "All NFG card transactions with fraud_score, risk flags",
+                "schema_summary": "txn_id, cardholder_id, amount, fraud_score",
+                "sensitivity": "RESTRICTED",
+                "sample_queries": ["Show transactions with fraud_score > 0.8"],
             }
         ]
         with patch("agents.metadata_agent._db", mock_db), \
              patch("agents.metadata_agent._sem_mem", mock_sem_mem):
             from agents.metadata_agent import search_data_catalog
             result = search_data_catalog.invoke(
-                {"query": "anti-money laundering and suspicious transaction monitoring"}
+                {"query": "fraud detection and transaction risk scoring"}
             )
             assert isinstance(result, str)
             assert len(result) > 0
-            assert "DS_006" in result or "Compliance" in result
+            assert "DS_001" in result or "Transaction Ledger" in result
+
+    # ── 🔵 Vector Search (keyword fallback when embeddings missing) ──
+    def test_qs_vector_search_keyword_fallback(self, mock_db, mock_sem_mem):
+        """When vector search returns nothing, keyword-OR regex fallback fires."""
+        mock_sem_mem.search_data_catalog.return_value = []  # no embeddings
+        fallback_doc = {
+            "name": "Transaction Ledger", "dataset_id": "DS_001",
+            "collection": "transactions", "owner": "Data Engineering",
+            "description": "All card transactions with fraud_score and risk flags",
+            "schema_summary": "txn_id, amount, fraud_score",
+            "sensitivity": "RESTRICTED", "sample_queries": [],
+            "tags": ["fraud", "transactions", "risk"],
+        }
+        catalog_coll = _mock_coll(docs=[fallback_doc])
+        mock_db.data_catalog = catalog_coll
+        with patch("agents.metadata_agent._db", mock_db), \
+             patch("agents.metadata_agent._sem_mem", mock_sem_mem):
+            from agents.metadata_agent import search_data_catalog
+            result = search_data_catalog.invoke(
+                {"query": "fraud detection and transaction risk scoring"}
+            )
+            assert isinstance(result, str)
+            assert "DS_001" in result or "Transaction Ledger" in result
+            # Verify the fallback query used $or across description, tags, name
+            call_args = catalog_coll.find.call_args
+            assert "$or" in str(call_args)
 
     # ── 🟢 Hybrid Search: "Search the catalog for datasets containing fraud_score …" ──
     def test_qs_hybrid_search(self, mock_db, mock_sem_mem):

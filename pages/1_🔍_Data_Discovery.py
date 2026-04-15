@@ -210,7 +210,7 @@ st.markdown("---")
 
 EXAMPLE_QUERIES = [
     # 🔵 Atlas Vector Search → search_data_catalog
-    ("🔵 Vector Search", "Find datasets related to anti-money laundering and suspicious transaction monitoring"),
+    ("🔵 Vector Search", "Find datasets related to fraud detection and transaction risk scoring"),
     # 🟢 Hybrid Search ($rankFusion) → hybrid_search_catalog
     ("🟢 Hybrid Search", "Search the catalog for datasets containing fraud_score in the transactions collection"),
     # 🟡 Text-to-MQL → execute_mql_query / MCP find
