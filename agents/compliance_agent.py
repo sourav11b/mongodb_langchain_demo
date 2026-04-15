@@ -194,7 +194,7 @@ def aml_network_analysis(cardholder_id: str) -> str:
             }},
             {"$project": {
                 "merchant_id": 1, "merchant_name": 1, "risk_cluster_flag": 1,
-                "risk_network_size": {"$size": "$risk_network"},
+                "risk_network_size": {"$size": {"$ifNull": ["$risk_network", []]}},
             }}
         ]
         results = list(_db.merchant_networks.aggregate(pipeline))

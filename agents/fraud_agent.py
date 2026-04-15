@@ -168,8 +168,8 @@ def check_merchant_fraud_ring(merchant_id: str) -> str:
         }},
         {"$project": {
             "merchant_name": 1, "risk_cluster_flag": 1, "cluster_id": 1,
-            "ring_connections": {"$size": "$network"},
-            "top_connections": {"$slice": ["$network.merchant_name", 3]},
+            "ring_connections": {"$size": {"$ifNull": ["$network", []]}},
+            "top_connections": {"$slice": [{"$ifNull": ["$network.merchant_name", []]}, 3]},
         }}
     ]
     results = list(_db.merchant_networks.aggregate(pipeline))

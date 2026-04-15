@@ -289,8 +289,8 @@ def graph_lookup_merchant_network(merchant_id: str, max_depth: int = 2) -> str:
             "merchant_name": 1,
             "cluster_id": 1,
             "risk_cluster_flag": 1,
-            "network_size": {"$size": "$network"},
-            "network": {"$slice": ["$network", 5]},
+            "network_size": {"$size": {"$ifNull": ["$network", []]}},
+            "network": {"$slice": [{"$ifNull": ["$network", []]}, 5]},
         }}
     ]
     results = list(_db.merchant_networks.aggregate(pipeline))
