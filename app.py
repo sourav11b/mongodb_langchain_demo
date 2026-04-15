@@ -4,8 +4,10 @@ Powered by: MongoDB Atlas · LangChain · LangGraph · Voyage AI · Azure OpenAI
 """
 
 import streamlit as st
-import os, sys
+import os, sys, logging
 sys.path.insert(0, os.path.dirname(__file__))
+
+logger = logging.getLogger("vaultiq.app")
 
 # ── Page config (must be first Streamlit call) ─────────────────────────────────
 st.set_page_config(
@@ -100,6 +102,55 @@ st.markdown("""
   .dash  { color:#bbb; }
 </style>
 """, unsafe_allow_html=True)
+
+# ── Atlas Cluster Health Check (runs once per session) ─────────────────────────
+from tools.atlas_cluster import is_configured as _atlas_configured, get_cluster_status, resume_cluster, wait_for_ready
+
+if "atlas_checked" not in st.session_state:
+    st.session_state.atlas_checked = False
+
+if not st.session_state.atlas_checked and _atlas_configured():
+    status = get_cluster_status()
+    logger.info("Atlas cluster check: %s", status)
+
+    if status.get("paused"):
+        st.warning("⏸️ **Atlas cluster is paused.** Auto-resuming…", icon="⏸️")
+        with st.status("🔄 Restarting Atlas cluster…", expanded=True) as atlas_status:
+            atlas_status.write(f"Cluster **{status.get('name')}** is paused. Sending resume request…")
+            resume_result = resume_cluster()
+            if resume_result.get("error"):
+                atlas_status.update(label=f"❌ Failed to resume: {resume_result['error']}", state="error")
+                st.error(f"Could not resume cluster: {resume_result['error']}")
+                st.stop()
+            atlas_status.write("✅ Resume request accepted. Waiting for cluster to become ready…")
+            atlas_status.write("_This typically takes 1–3 minutes for M0/M10, longer for larger tiers._")
+            ready = wait_for_ready(max_wait=300, poll_interval=15)
+            if ready.get("stateName") == "IDLE":
+                atlas_status.update(
+                    label=f"✅ Atlas cluster ready ({ready.get('elapsed', '?')}s)",
+                    state="complete", expanded=False,
+                )
+                st.session_state.atlas_checked = True
+                st.toast(f"Atlas cluster resumed in {ready.get('elapsed')}s ✅", icon="🍃")
+            else:
+                atlas_status.update(
+                    label=f"⚠️ Cluster not ready: {ready.get('stateName')} ({ready.get('elapsed', '?')}s)",
+                    state="error",
+                )
+                st.error(
+                    f"Cluster state: **{ready.get('stateName')}** after {ready.get('elapsed')}s. "
+                    "Please check Atlas console manually."
+                )
+                st.stop()
+    elif status.get("error"):
+        logger.warning("Atlas health check error (non-fatal): %s", status.get("error"))
+        st.session_state.atlas_checked = True  # don't block the app
+    else:
+        logger.info("Atlas cluster is running: stateName=%s", status.get("stateName"))
+        st.session_state.atlas_checked = True
+elif not _atlas_configured():
+    st.session_state.atlas_checked = True  # skip if API not configured
+
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:

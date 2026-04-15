@@ -64,6 +64,7 @@ FTS_INDEXES = {
 # Atlas Admin API
 ATLAS_API_CLIENT_ID: str     = os.getenv("ATLAS_API_CLIENT_ID", "")
 ATLAS_API_CLIENT_SECRET: str = os.getenv("ATLAS_API_CLIENT_SECRET", "")
+ATLAS_API_PROJECT_ID: str    = os.getenv("ATLAS_API_PROJECT_ID", "")
 ATLAS_API_CLUSTER_NAME: str  = os.getenv("ATLAS_API_CLUSTER_NAME", "")
 
 # ── Azure OpenAI ───────────────────────────────────────────────────────────────
