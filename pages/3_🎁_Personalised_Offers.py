@@ -205,6 +205,15 @@ with col_config:
   &nbsp;&nbsp;
   <span class="blog-feature-tag bft-vector">🔵 Blog Feature: Atlas Vector Search</span>
   &nbsp; <code>find_relevant_offers</code> uses pure <code>$vectorSearch</code> for intent-based offer matching.
+  &nbsp;&nbsp;
+  <span class="blog-feature-tag bft-mql">🟡 Blog Feature: Vector Search Pre-Filtering</span>
+  &nbsp; <code>find_relevant_offers</code> demonstrates <strong>Atlas Vector Search pre-filtering</strong> —
+  the <code>filter</code> parameter in <code>$vectorSearch</code> narrows the ANN candidate set
+  <em>inside the index</em> before cosine similarity runs. Filterable fields (<code>eligible_tiers</code>,
+  <code>category</code>) are declared in the vector index definition, enabling queries like:
+  <br><code style="font-size:.8rem;">find_relevant_offers("dining rewards", card_tier="Platinum", category="Restaurant")</code>
+  <br>This is faster and more precise than post-filtering because irrelevant documents never enter
+  the similarity ranking.
 </div>
 """, unsafe_allow_html=True)
 
@@ -251,6 +260,8 @@ if "offers_tool_calls" not in st.session_state:
 EXAMPLE_PROMPTS = [
     # 🔵 Vector Search → find_relevant_offers
     ("🔵 Offer Search", "Find Restaurant and Entertainment offers available for a Platinum card"),
+    # 🟡 Pre-Filtered Vector Search → find_relevant_offers with category filter
+    ("🟡 Pre-Filter", "Show me Travel offers only — I'm looking for lounge access and flight upgrades for my Platinum card"),
     # 🟢 Hybrid Search ($rankFusion) → hybrid_search_offers
     ("🟢 Hybrid Search", "Search offers with cashback or points multiplier at Travel and Hotel merchants"),
     # 📍 Geospatial → find_nearby_offers

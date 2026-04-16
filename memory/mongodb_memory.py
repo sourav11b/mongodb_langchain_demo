@@ -149,10 +149,28 @@ class SemanticMemory:
         """Find relevant datasets from the NFG data catalog."""
         return self._vector_search("data_catalog", query, "catalog_vector_index", limit)
 
-    def search_offers(self, query: str, card_tier: str | None = None, limit: int = 6) -> list[dict]:
-        """Semantic search over active offers, optionally filtered by card tier."""
-        filter_ = {"eligible_tiers": card_tier} if card_tier else None
-        return self._vector_search("offers", query, "offers_vector_index", limit, filter_)
+    def search_offers(
+        self, query: str, card_tier: str | None = None,
+        category: str | None = None, limit: int = 6,
+    ) -> list[dict]:
+        """Semantic search over offers with Atlas Vector Search pre-filtering.
+
+        Pre-filters narrow the ANN candidate set *before* the vector search runs,
+        which is both faster and more relevant than post-filtering.
+
+        Filterable fields (declared in the vector index definition):
+            - eligible_tiers: e.g. "Platinum", "Gold"
+            - category: e.g. "Restaurant", "Travel", "Shopping"
+        """
+        filter_: dict = {}
+        if card_tier:
+            filter_["eligible_tiers"] = card_tier
+        if category:
+            filter_["category"] = category
+        return self._vector_search(
+            "offers", query, "offers_vector_index", limit,
+            filter_ if filter_ else None,
+        )
 
     def search_cardholder_profiles(self, query: str, limit: int = 5) -> list[dict]:
         """Semantic search over cardholder profiles."""

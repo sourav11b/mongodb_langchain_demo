@@ -351,14 +351,28 @@ def make_merchant_networks(merchants: list) -> list[dict]:
 
 
 # ── Atlas Search Index Definitions ────────────────────────────────────────────
-VECTOR_INDEX_DEF = {
-    "type": "vectorSearch",
-    "fields": [{
+
+def _vector_fields(*filter_paths: str) -> dict:
+    """Build a vectorSearch index definition with optional pre-filter fields."""
+    fields: list[dict] = [{
         "type": "vector",
         "path": "embedding",
         "numDimensions": 1024,
         "similarity": "cosine",
     }]
+    for path in filter_paths:
+        fields.append({"type": "filter", "path": path})
+    return {"type": "vectorSearch", "fields": fields}
+
+
+# Per-collection index definitions with pre-filter support
+VECTOR_INDEX_DEFS: dict[str, tuple[str, dict]] = {
+    "offers":           ("offers_vector_index",     _vector_fields("eligible_tiers", "category")),
+    "data_catalog":     ("catalog_vector_index",    _vector_fields("tags")),
+    "compliance_rules": ("compliance_vector_index", _vector_fields("jurisdiction", "category")),
+    "merchants":        ("merchants_vector_index",  _vector_fields("category", "risk_tier")),
+    "cardholders":      ("cardholders_vector_index",_vector_fields("card_tier", "status")),
+    "fraud_cases":      ("fraud_cases_vector_index",_vector_fields("status", "severity")),
 }
 
 
@@ -379,19 +393,13 @@ def create_indexes(db) -> None:
     db.merchant_networks.create_index([("cluster_id", ASCENDING)])
     print("  ✓ Geospatial and standard indexes created")
 
-    # Atlas Vector Search indexes (works with Atlas only — skip on local)
-    for coll_name, idx_name in [
-        ("offers",          "offers_vector_index"),
-        ("data_catalog",    "catalog_vector_index"),
-        ("compliance_rules","compliance_vector_index"),
-        ("merchants",       "merchants_vector_index"),
-        ("cardholders",     "cardholders_vector_index"),
-        ("fraud_cases",     "fraud_cases_vector_index"),
-    ]:
+    # Atlas Vector Search indexes with pre-filter fields
+    for coll_name, (idx_name, idx_def) in VECTOR_INDEX_DEFS.items():
         try:
-            model = SearchIndexModel(definition=VECTOR_INDEX_DEF, name=idx_name, type="vectorSearch")
+            model = SearchIndexModel(definition=idx_def, name=idx_name, type="vectorSearch")
             db[coll_name].create_search_index(model)
-            print(f"  ✓ Vector index '{idx_name}' queued on '{coll_name}'")
+            filter_paths = [f["path"] for f in idx_def.get("fields", []) if f["type"] == "filter"]
+            print(f"  ✓ Vector index '{idx_name}' on '{coll_name}' (filters: {filter_paths})")
         except Exception as e:
             print(f"  ⚠ Vector index on '{coll_name}' skipped (Atlas only): {e}")
 

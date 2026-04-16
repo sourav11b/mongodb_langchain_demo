@@ -60,9 +60,27 @@ class OffersAgentState(TypedDict):
 
 # ── Tools ──────────────────────────────────────────────────────────────────────
 @tool
-def find_relevant_offers(query: str, card_tier: str | None = None, limit: int = 5) -> str:
-    """Semantic search for offers matching the cardholder's query and tier."""
-    results = _sem_mem.search_offers(query, card_tier=card_tier, limit=limit)
+def find_relevant_offers(
+    query: str,
+    card_tier: str | None = None,
+    category: str | None = None,
+    limit: int = 5,
+) -> str:
+    """Semantic vector search for offers with Atlas Vector Search PRE-FILTERING.
+
+    Pre-filtering narrows the ANN candidate set *inside the index* before
+    cosine similarity runs — faster and more relevant than post-filtering.
+
+    Pre-filter fields (declared in the offers_vector_index definition):
+        - card_tier: "Green", "Gold", "Platinum", "Centurion"
+        - category: "Restaurant", "Travel", "Shopping", "Entertainment", etc.
+
+    Examples:
+        find_relevant_offers("dining rewards", card_tier="Platinum")
+        find_relevant_offers("travel perks", category="Travel")
+        find_relevant_offers("cashback", card_tier="Gold", category="Shopping")
+    """
+    results = _sem_mem.search_offers(query, card_tier=card_tier, category=category, limit=limit)
     if not results:
         # Fallback: keyword-OR text search across benefit_text, category, merchant_name
         stop = {"the","a","an","and","or","of","in","for","to","with","on","by","is","are","my","me","all"}
@@ -70,6 +88,8 @@ def find_relevant_offers(query: str, card_tier: str | None = None, limit: int = 
         filt: dict = {}
         if card_tier:
             filt["eligible_tiers"] = card_tier
+        if category:
+            filt["category"] = category
         if words:
             pattern = "|".join(words)
             filt["$or"] = [
