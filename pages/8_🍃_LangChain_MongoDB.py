@@ -436,9 +436,24 @@ Provides tools that auto-discover schemas, generate MQL, validate queries, and e
                     result = run_database_query(tk_query.strip())
                     answer = result.get("answer", str(result))
                     st.markdown(f'<div class="demo-box">{answer}</div>', unsafe_allow_html=True)
+
+                    # Extract tool calls and generated MQL from agent trace
                     tool_calls = result.get("tool_calls", [])
                     if tool_calls:
                         st.markdown("**🔧 Tools used:** " + " → ".join(f"`{t}`" for t in tool_calls))
+
+                    msgs = result.get("messages", [])
+                    for msg in msgs:
+                        if hasattr(msg, "tool_calls") and msg.tool_calls:
+                            for tc in msg.tool_calls:
+                                name = tc.get("name", "?")
+                                args = tc.get("args", {})
+                                if "query" in name.lower() and name != "mongodb_query_checker":
+                                    query_str = args.get("query", str(args))
+                                    st.markdown("**📝 Generated MQL:**")
+                                    st.code(query_str, language="javascript")
+                                elif name == "mongodb_query_checker":
+                                    st.markdown("**✅ Query Checker validated the query**")
                 except Exception as e:
                     st.error(f"Agent error: {e}")
 with col10b:
