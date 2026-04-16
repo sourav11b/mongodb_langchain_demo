@@ -121,8 +121,8 @@ st.markdown("---")
 st.markdown('<span class="section-num">2</span> **MongoDBAtlasFullTextSearchRetriever** — Atlas Full-Text Search', unsafe_allow_html=True)
 col2a, col2b = st.columns([3, 2])
 with col2a:
-    st.markdown("Keyword-based retrieval using Atlas Search (Lucene). Best for exact terms and regulatory identifiers.")
-    fts_query = st.text_input("Query:", value="BSA currency transaction reporting", key="fts_q")
+    st.markdown("Keyword-based retrieval using Atlas Search (Lucene). Best for exact terms, keyword matching, and structured queries.")
+    fts_query = st.text_input("Query:", value="3x points dining cashback", key="fts_q")
     if st.button("▶️ Run Demo", key="run_fts"):
         with st.spinner("Running full-text search…"):
             from tools.langchain_mongodb_showcase import demo_fulltext_search
@@ -279,18 +279,27 @@ Build a knowledge graph automatically from text. The LLM extracts entities
 (Cardholder, Merchant, FraudCase) and relationships (HAS_TRANSACTION, FRAUD_RING_WITH),
 then stores them as MongoDB documents. Query via graph traversal.
 """)
-    graph_text = st.text_area("Input text:", value="Cardholder CH_0005 is a Platinum member in London. They transacted with Merchant MER_0042 which has high fraud risk. MER_0042 is connected to MER_0043 via same ownership.", height=80, key="graph_t")
+    GRAPH_SAMPLES = [
+        "Cardholder CH_0005 is a Platinum member in London. They transacted with Merchant MER_0042 which has high fraud risk. MER_0042 is connected to MER_0043 via same ownership.",
+        "Fraud case FC_012 involves card-not-present fraud. Cardholder CH_0022 reported unauthorized transactions at MER_0088 and MER_0091. Investigation revealed both merchants share owner John Smith.",
+        "BSA rule requires reporting transactions over $10,000. Cardholder CH_0010 made 5 transactions of $9,500 each at MER_0055 within 24 hours, triggering structuring alert SA-2025-0042.",
+    ]
+    graph_sample = st.selectbox("Sample texts:", GRAPH_SAMPLES, key="graph_sample")
+    graph_text = st.text_area("Input text:", value=graph_sample, height=80, key="graph_t")
     if st.button("▶️ Run Demo", key="run_graph"):
         with st.spinner("LLM extracting entities → building graph…"):
             from tools.langchain_mongodb_showcase import demo_graph_store
             r = demo_graph_store(graph_text)
             st.markdown(f'<div class="demo-box">Extracted <strong>{len(r["entities_extracted"])}</strong> entities in <strong>{r["build_ms"]}ms</strong></div>', unsafe_allow_html=True)
             ent_chips = " ".join(f'<span class="feat-tag ft-purple">{e}</span>' for e in r["entities_extracted"])
-            st.markdown(f"**Entities:** {ent_chips}", unsafe_allow_html=True)
+            st.markdown(f"**Entities extracted:** {ent_chips}", unsafe_allow_html=True)
             if r["related_entities"]:
-                st.markdown("**Related entities:**")
-                for rel in r["related_entities"][:5]:
-                    st.json(rel)
+                st.markdown("**🔗 Graph traversal — Related entities found:**")
+                for i, rel in enumerate(r["related_entities"][:8]):
+                    with st.expander(f"Related entity {i+1}", expanded=(i < 2)):
+                        st.json(rel)
+            else:
+                st.info("No related entities yet — entities have been stored. Run again with more text to build connections.")
 with col7b:
     st.markdown("""<div class="code-snippet">
 from langchain_mongodb.graphrag.graph \\<br>
@@ -326,12 +335,11 @@ with col8a:
                     st.text(doc["content"][:400])
 with col8b:
     st.markdown("""<div class="code-snippet">
-from langchain_mongodb.loaders import MongoDBLoader<br><br>
-loader = MongoDBLoader(<br>
-&nbsp;&nbsp;connection_string=MONGODB_URI,<br>
-&nbsp;&nbsp;db_name=DB_NAME,<br>
-&nbsp;&nbsp;collection_name="compliance_rules",<br>
-)<br>
+from langchain_mongodb.loaders import MongoDBLoader<br>
+from pymongo import MongoClient<br><br>
+client = MongoClient(MONGODB_URI)<br>
+coll = client[DB_NAME]["compliance_rules"]<br><br>
+loader = MongoDBLoader(collection=coll)<br>
 docs = loader.load()<br>
 # docs[0].page_content → document text<br>
 # docs[0].metadata → MongoDB fields
@@ -358,11 +366,10 @@ Essential for production RAG pipelines where data sources are refreshed periodic
 with col9b:
     st.markdown("""<div class="code-snippet">
 from langchain_mongodb.indexes import \\<br>
-&nbsp;&nbsp;MongoDBRecordManager<br><br>
-rm = MongoDBRecordManager(<br>
-&nbsp;&nbsp;namespace="my_app",<br>
-&nbsp;&nbsp;connection_string=MONGODB_URI,<br>
-)<br>
+&nbsp;&nbsp;MongoDBRecordManager<br>
+from pymongo import MongoClient<br><br>
+coll = MongoClient(URI)[DB]["record_mgr"]<br>
+rm = MongoDBRecordManager(collection=coll)<br>
 rm.create_schema()<br>
 rm.update(["doc_1", "doc_2"])<br>
 rm.exists(["doc_1"]) → [True]
@@ -377,16 +384,41 @@ col10a, col10b = st.columns([3, 2])
 with col10a:
     st.markdown("""
 A complete toolkit for building LLM agents that query MongoDB using natural language.
-Provides 4 tools that auto-discover schemas, generate MQL, validate queries, and execute them.
-See the dedicated **🗄️ Database Agent** page for the full interactive demo.
+Provides tools that auto-discover schemas, generate MQL, validate queries, and execute them.
 """)
-    if st.button("▶️ Show Toolkit Tools", key="run_tk"):
-        with st.spinner("Loading toolkit…"):
-            from tools.langchain_mongodb_showcase import demo_toolkit
-            r = demo_toolkit()
-            st.markdown(f'<div class="demo-box"><strong>{r["tool_count"]}</strong> tools provided by MongoDBDatabaseToolkit</div>', unsafe_allow_html=True)
-            for t in r["tools"]:
-                st.markdown(f"- **`{t['name']}`** — {t['description'][:120]}")
+    SAMPLE_NL_QUERIES = [
+        "How many Platinum cardholders are there?",
+        "Show me the top 5 merchants by transaction count",
+        "Find all fraud cases with severity 'critical'",
+        "What compliance rules apply to jurisdiction 'US-Federal'?",
+        "List all offers in the 'Travel' category",
+        "Count transactions over $5,000 in the last month",
+    ]
+    st.markdown("**🟡 Sample Natural-Language Queries:**")
+    selected_q = st.selectbox("Pick a sample or type your own:", ["(type your own)"] + SAMPLE_NL_QUERIES, key="tk_sample")
+    tk_query = st.text_input("Natural language query:", value="" if selected_q == "(type your own)" else selected_q, key="tk_q")
+    c_tools, c_run = st.columns(2)
+    with c_tools:
+        if st.button("🔧 Show Toolkit Tools", key="run_tk"):
+            with st.spinner("Loading toolkit…"):
+                from tools.langchain_mongodb_showcase import demo_toolkit
+                r = demo_toolkit()
+                st.markdown(f'<div class="demo-box"><strong>{r["tool_count"]}</strong> tools</div>', unsafe_allow_html=True)
+                for t in r["tools"]:
+                    st.markdown(f"- **`{t['name']}`** — {t['description'][:120]}")
+    with c_run:
+        if st.button("▶️ Run Query via Agent", key="run_tk_query") and tk_query.strip():
+            with st.spinner("Agent thinking → generating MQL → executing…"):
+                try:
+                    from agents.database_agent import run_database_query
+                    result = run_database_query(tk_query.strip())
+                    answer = result.get("answer", str(result))
+                    st.markdown(f'<div class="demo-box">{answer}</div>', unsafe_allow_html=True)
+                    tool_calls = result.get("tool_calls", [])
+                    if tool_calls:
+                        st.markdown("**🔧 Tools used:** " + " → ".join(f"`{t}`" for t in tool_calls))
+                except Exception as e:
+                    st.error(f"Agent error: {e}")
 with col10b:
     st.markdown("""<div class="code-snippet">
 from langchain_mongodb.agent_toolkit import \\<br>
@@ -395,7 +427,10 @@ db = MongoDBDatabase.from_connection_string(<br>
 &nbsp;&nbsp;MONGODB_URI, database=DB_NAME)<br>
 toolkit = MongoDBDatabaseToolkit(db=db, llm=llm)<br>
 tools = toolkit.get_tools()<br>
-agent = create_react_agent(llm, tools)
+# Tools: query_mongodb, info_mongodb,<br>
+# list_mongodb, check_query_mongodb<br><br>
+agent = create_react_agent(llm, tools)<br>
+agent.invoke("How many Platinum members?")
 </div>""", unsafe_allow_html=True)
 
 # ── Summary ────────────────────────────────────────────────────────────────────

@@ -81,6 +81,40 @@ try:
 </div>
 """, unsafe_allow_html=True)
 
+    # ── Atlas Status Panel ──────────────────────────────────────────────────────
+    st.markdown("#### 🔍 Atlas Cluster Status")
+    col_atlas1, col_atlas2, col_atlas3 = st.columns(3)
+    with col_atlas1:
+        # Server info
+        try:
+            server_info = client.server_info()
+            st.markdown(f"""
+<div class="stat-card" style="border-top:3px solid #27ae60;">
+  <div class="num" style="font-size:1.2rem;">✅ Connected</div>
+  <div class="label">MongoDB v{server_info.get('version', '?')}</div>
+</div>""", unsafe_allow_html=True)
+        except Exception:
+            st.markdown('<div class="stat-card" style="border-top:3px solid #e74c3c;"><div class="num" style="color:#e74c3c;">❌ Error</div></div>', unsafe_allow_html=True)
+    with col_atlas2:
+        total_docs = sum(db[c].count_documents({}) for c in COLL_INFO)
+        st.markdown(f"""
+<div class="stat-card" style="border-top:3px solid #006FCF;">
+  <div class="num">{total_docs:,}</div>
+  <div class="label">Total Documents</div>
+</div>""", unsafe_allow_html=True)
+    with col_atlas3:
+        total_indexes = 0
+        for c in COLL_INFO:
+            try:
+                total_indexes += len(list(db[c].list_search_indexes()))
+            except Exception:
+                pass
+        st.markdown(f"""
+<div class="stat-card" style="border-top:3px solid #8e44ad;">
+  <div class="num">{total_indexes}</div>
+  <div class="label">Search Indexes (Vector + FTS)</div>
+</div>""", unsafe_allow_html=True)
+
     client.close()
     st.success("✅ MongoDB connection successful")
 except Exception as e:
@@ -152,6 +186,75 @@ Requires `VOYAGE_API_KEY` in .env
                     st.code(result.stderr, language="text")
             except Exception as e:
                 st.error(f"Error: {e}")
+
+st.markdown("---")
+
+# ── Drop & Reload ─────────────────────────────────────────────────────────────
+st.markdown("### 🔄 Drop & Reload All Data")
+st.markdown("""
+**⚠️ Destructive operation** — drops all collections, then re-seeds data and regenerates embeddings + indexes.
+Use this when you need a clean slate or after code changes to seed data.
+""")
+
+col_drop, col_reload = st.columns(2)
+with col_drop:
+    confirm_drop = st.checkbox("I understand this will delete ALL data", key="confirm_drop")
+    if st.button("🗑️ Drop All Collections", type="secondary", use_container_width=True, disabled=not confirm_drop):
+        with st.spinner("Dropping all collections…"):
+            try:
+                from pymongo import MongoClient
+                client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+                db = client[MONGODB_DB_NAME]
+                dropped = []
+                for cname in list(COLL_INFO.keys()) + ["knowledge_graph", "langchain_chat_history",
+                    "langchain_cache", "langchain_semantic_cache", "langchain_graph_demo",
+                    "langchain_record_manager"]:
+                    try:
+                        db.drop_collection(cname)
+                        dropped.append(cname)
+                    except Exception:
+                        pass
+                client.close()
+                st.success(f"✅ Dropped {len(dropped)} collections: {', '.join(dropped)}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Drop failed: {e}")
+
+with col_reload:
+    if st.button("🔄 Full Reload (Seed + Embed + Indexes)", type="primary", use_container_width=True):
+        with st.spinner("Step 1/2: Seeding data…"):
+            try:
+                import subprocess
+                result = subprocess.run(
+                    [sys.executable, "-m", "data.seed_data"],
+                    capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+                )
+                if result.returncode != 0:
+                    st.error("Seeding failed")
+                    st.code(result.stderr, language="text")
+                    st.stop()
+                st.code(result.stdout[-500:] if len(result.stdout) > 500 else result.stdout, language="text")
+            except Exception as e:
+                st.error(f"Seed error: {e}")
+                st.stop()
+
+        with st.spinner("Step 2/2: Generating embeddings…"):
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-m", "embeddings.voyage_client"],
+                    capture_output=True, text=True, cwd=os.path.dirname(os.path.dirname(__file__))
+                )
+                if result.returncode != 0:
+                    st.error("Embedding failed")
+                    st.code(result.stderr, language="text")
+                    st.stop()
+                st.code(result.stdout[-500:] if len(result.stdout) > 500 else result.stdout, language="text")
+            except Exception as e:
+                st.error(f"Embed error: {e}")
+                st.stop()
+
+        st.success("✅ Full reload complete! Data seeded, embeddings generated, indexes created.")
+        st.rerun()
 
 st.markdown("---")
 

@@ -79,19 +79,29 @@ def demo_vector_search(query: str = "high cashback dining offers", collection: s
 
 # ── 2. FullTextSearchRetriever ───────────────────────────────────────────────
 
-def demo_fulltext_search(query: str = "BSA currency transaction reporting",
-                         collection: str = "compliance_rules", k: int = 3) -> dict:
-    """Atlas Full-Text Search via MongoDBAtlasFullTextSearchRetriever."""
+def demo_fulltext_search(query: str = "3x points dining cashback",
+                         collection: str = "offers", k: int = 3) -> dict:
+    """Atlas Full-Text Search via MongoDBAtlasFullTextSearchRetriever.
+
+    Uses the offers collection which has an Atlas FTS index (offers_fts_index).
+    """
     from langchain_mongodb.retrievers import MongoDBAtlasFullTextSearchRetriever
     from pymongo import MongoClient
 
     client = MongoClient(MONGODB_URI)
     coll = client[MONGODB_DB_NAME][collection]
 
+    # Map collections to their FTS index and search field
+    fts_config = {
+        "offers": ("offers_fts_index", "description"),
+        "compliance_rules": ("compliance_fts_index", "rule_text"),
+    }
+    index_name, search_field = fts_config.get(collection, ("default", "description"))
+
     retriever = MongoDBAtlasFullTextSearchRetriever(
         collection=coll,
-        search_index_name="default",
-        search_field="rule_text" if collection == "compliance_rules" else "description",
+        search_index_name=index_name,
+        search_field=search_field,
         top_k=k,
     )
 
@@ -106,6 +116,8 @@ def demo_fulltext_search(query: str = "BSA currency transaction reporting",
         "results": [{"content": d.page_content[:300], "metadata": d.metadata} for d in docs],
         "count": len(docs),
         "elapsed_ms": round(elapsed * 1000),
+        "index_used": index_name,
+        "search_field": search_field,
     }
 
 
@@ -113,7 +125,12 @@ def demo_fulltext_search(query: str = "BSA currency transaction reporting",
 
 def demo_hybrid_search(query: str = "rewards points for travel purchases",
                        collection: str = "offers", k: int = 3) -> dict:
-    """Hybrid (vector + full-text) via MongoDBAtlasHybridSearchRetriever."""
+    """Hybrid (vector + full-text) via MongoDBAtlasHybridSearchRetriever.
+
+    Requires a MongoDBAtlasVectorSearch vectorstore instance —
+    the retriever combines vector + FTS internally.
+    """
+    from langchain_mongodb import MongoDBAtlasVectorSearch
     from langchain_mongodb.retrievers import MongoDBAtlasHybridSearchRetriever
     from pymongo import MongoClient
 
@@ -121,13 +138,18 @@ def demo_hybrid_search(query: str = "rewards points for travel purchases",
     coll = client[MONGODB_DB_NAME][collection]
     embeddings = _get_embeddings()
 
-    retriever = MongoDBAtlasHybridSearchRetriever(
+    # HybridSearchRetriever requires a vectorstore, not raw collection
+    vectorstore = MongoDBAtlasVectorSearch(
         collection=coll,
         embedding=embeddings,
-        vector_search_index="offers_vector_index",
-        search_index_name="default",
+        index_name="offers_vector_index",
         text_key="description",
         embedding_key="embedding",
+    )
+
+    retriever = MongoDBAtlasHybridSearchRetriever(
+        vectorstore=vectorstore,
+        search_index_name="offers_fts_index",
         top_k=k,
     )
 
@@ -299,25 +321,27 @@ def demo_graph_store(text: str = "Cardholder CH_0005 is a Platinum member in Lon
 
 # ── 8. MongoDBLoader ────────────────────────────────────────────────────────
 
-def demo_loader(collection: str = "compliance_rules", max_docs: int = 3) -> dict:
+def demo_loader(collection_name: str = "compliance_rules", max_docs: int = 3) -> dict:
     """Load MongoDB docs as LangChain Documents via MongoDBLoader."""
     from langchain_mongodb.loaders import MongoDBLoader
+    from pymongo import MongoClient
+
+    client = MongoClient(MONGODB_URI)
+    coll = client[MONGODB_DB_NAME][collection_name]
 
     loader = MongoDBLoader(
-        connection_string=MONGODB_URI,
-        db_name=MONGODB_DB_NAME,
-        collection_name=collection,
+        collection=coll,
         filter_criteria={},
-        field_names=None,  # load all fields
     )
 
     t0 = time.time()
     docs = loader.load()
     elapsed = time.time() - t0
+    client.close()
 
     return {
         "class": "MongoDBLoader",
-        "collection": collection,
+        "collection": collection_name,
         "total_loaded": len(docs),
         "sample_docs": [{"content": d.page_content[:300], "metadata": d.metadata} for d in docs[:max_docs]],
         "elapsed_ms": round(elapsed * 1000),
@@ -329,13 +353,12 @@ def demo_loader(collection: str = "compliance_rules", max_docs: int = 3) -> dict
 def demo_record_manager() -> dict:
     """Track document indexing to prevent duplicates via MongoDBRecordManager."""
     from langchain_mongodb.indexes import MongoDBRecordManager
+    from pymongo import MongoClient
 
-    rm = MongoDBRecordManager(
-        namespace="vaultiq_demo",
-        connection_string=MONGODB_URI,
-        db_name=MONGODB_DB_NAME,
-        collection_name="langchain_record_manager",
-    )
+    client = MongoClient(MONGODB_URI)
+    coll = client[MONGODB_DB_NAME]["langchain_record_manager"]
+
+    rm = MongoDBRecordManager(collection=coll)
     rm.create_schema()
 
     t0 = time.time()
@@ -346,10 +369,12 @@ def demo_record_manager() -> dict:
     # Check if exists
     exists = rm.exists(keys)
     elapsed = time.time() - t0
+    client.close()
 
+    namespace = f"{MONGODB_DB_NAME}.langchain_record_manager"
     return {
         "class": "MongoDBRecordManager",
-        "namespace": "vaultiq_demo",
+        "namespace": namespace,
         "keys_registered": keys,
         "exists_check": exists,
         "elapsed_ms": round(elapsed * 1000),
