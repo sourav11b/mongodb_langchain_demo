@@ -12,6 +12,13 @@ st.markdown("""
 <style>
   [data-testid="stSidebar"] { background: linear-gradient(180deg,#003087 0%,#006FCF 100%); }
   [data-testid="stSidebar"] > div > div > div > * { color: white !important; }
+  [data-testid="stSidebar"] label, [data-testid="stSidebar"] p,
+  [data-testid="stSidebar"] span, [data-testid="stSidebar"] h1,
+  [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
+  [data-testid="stSidebar"] h4, [data-testid="stSidebar"] li,
+  [data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+  [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] * { color: white !important; }
+  [data-testid="stSidebar"] [data-testid="stRadio"] label span { color: white !important; }
   [data-testid="stSidebar"] [data-testid="stExpander"] details { background:rgba(255,255,255,.95); border-radius:8px; }
   [data-testid="stSidebar"] [data-testid="stExpander"] summary span,
   [data-testid="stSidebar"] [data-testid="stExpander"] summary svg { color:#003087 !important; }

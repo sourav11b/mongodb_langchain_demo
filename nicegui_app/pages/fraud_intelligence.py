@@ -215,6 +215,48 @@ async def fraud_page():
 
     run_btn.on_click(_run_fraud)
 
+    # ── Architecture diagram ──────────────────────────────────────────────
+    ui.separator().classes("my-2")
+    with ui.expansion("🏗️ Architecture — Fraud Agent Reasoning Graph", value=False).classes("w-full"):
+        ui.html("""<pre style="font-size:.78rem; background:#f8f9fa; padding:1rem; border-radius:6px; overflow-x:auto;">
+                    ┌─────────────────────────────────────┐
+                    │         FraudAgentState              │
+                    │  messages · case_id · severity       │
+                    │  actions_taken · fraud_type          │
+                    └─────────────────────────────────────┘
+                              │
+                    ┌─────────▼──────────┐
+                    │   [Agent Node]     │  ← Azure GPT-4o
+                    │   VaultShield LLM  │    reads playbook
+                    └─────────┬──────────┘    (Procedural Memory)
+              tool_calls?     │  no tool_calls
+         ┌───────────────────►│◄────────────────────── END
+         │           ┌────────┘
+         │           ▼
+         │  ┌─────────────────────────────────────────────┐
+         │  │              [Tool Node]                    │
+         │  │  MongoDB Tools:                             │
+         │  │    get_flagged_transactions (time-series)   │
+         │  │    check_transaction_velocity               │
+         │  │    check_merchant_fraud_ring ($graphLookup) │
+         │  │    timeseries_fraud_trend (aggregation)     │
+         │  │  FastMCP Tools:                             │
+         │  │    mcp_screen_sanctions → OFAC API         │
+         │  │    mcp_block_card → NFG Card System       │
+         │  │    mcp_file_sar → FinCEN SAR Portal        │
+         │  │    mcp_send_notification → Push/SMS        │
+         │  └─────────────────────────────────────────────┘
+         │           │
+         └───────────┘  (loops until no more tool calls)
+</pre>""")
+        ui.markdown("""
+**MongoDB query patterns used:**
+- `$match` + `$sort` on `fraud_score` and `timestamp` (time-series)
+- `$graphLookup` on `merchant_networks` (depth ≤ 2) for fraud ring detection
+- `$group` + `$dateToString` for daily fraud trend aggregation
+- All case history written to `conversation_history` (Episodic Memory)
+""")
+
     # ── Scenario injection handlers ───────────────────────────────────────
     async def _inject(key: str):
         try:
