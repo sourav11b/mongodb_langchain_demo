@@ -8,7 +8,7 @@ import sys, os, asyncio, logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
-from nicegui_app.theme import (inject_css, page_header, render_chat_bubble,
+from nicegui_app.theme import (inject_css, nav_bar, page_header, render_chat_bubble,
                                show_spinner, render_tool_chips)
 
 logger = logging.getLogger("vaultiq.nicegui.offers")
@@ -38,6 +38,7 @@ async def offers_page():
     tab_id = str(app.storage.tab.get("_id", id(ui.context.client)))
     state = _get_state(tab_id)
     inject_css()
+    nav_bar("/offers")
 
     page_header(
         "🎁 Use Case 3: Personalised Offers Concierge",
@@ -119,19 +120,24 @@ async def offers_page():
     for turn in state["msgs"]:
         render_chat_bubble(chat_box, turn)
 
+    # ── Input (must be defined before Quick Start) ──────────────────────
+    with ui.row().classes("w-full items-center gap-2 mt-3"):
+        inp = ui.input(placeholder="Ask about offers, rewards, spending…").classes("flex-grow").props("outlined dense")
+        send_btn = ui.button("Send ➤", color="primary")
+    status = ui.label("").classes("text-xs text-gray-500")
+
     # ── Quick Start ───────────────────────────────────────────────────────
     qs = ui.row().classes("w-full gap-2 flex-wrap")
     if not state["msgs"]:
         with qs:
             ui.label("💡 Quick starts — each highlights a different feature:").classes("w-full text-sm font-semibold")
             for label, prompt in EXAMPLE_PROMPTS:
-                ui.button(label, on_click=lambda p=prompt: _fill(p)).tooltip(prompt).classes("text-xs")
-
-    # ── Input ─────────────────────────────────────────────────────────────
-    with ui.row().classes("w-full items-center gap-2 mt-3"):
-        inp = ui.input(placeholder="Ask about offers, rewards, spending…").classes("flex-grow").props("outlined dense")
-        ui.button("Send ➤", color="primary", on_click=lambda: _send())
-    status = ui.label("").classes("text-xs text-gray-500")
+                def _make_fill(p=prompt):
+                    async def handler():
+                        inp.value = p
+                        await _send()
+                    return handler
+                ui.button(label, on_click=_make_fill()).tooltip(prompt).classes("text-xs")
 
     # ── Handlers ──────────────────────────────────────────────────────────
     async def _send():
@@ -181,11 +187,8 @@ async def offers_page():
         state["hist"].append(AIMessage(content=answer))
         status.text = f"✅ Done — Tools: {agent_turn['tools']}"
 
-    def _fill(prompt: str):
-        inp.value = prompt
-        asyncio.ensure_future(_send())
-
     inp.on("keydown.enter", lambda: _send())
+    send_btn.on_click(lambda: _send())
 
     # ── Actions ───────────────────────────────────────────────────────────
     with ui.row().classes("w-full gap-2 mt-2"):

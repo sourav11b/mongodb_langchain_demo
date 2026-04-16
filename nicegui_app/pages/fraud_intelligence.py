@@ -10,7 +10,7 @@ from datetime import datetime, timezone, timedelta
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
-from nicegui_app.theme import (inject_css, page_header, render_tool_chips,
+from nicegui_app.theme import (inject_css, nav_bar, page_header, render_tool_chips,
                                show_spinner, render_answer_box, _md_to_html)
 
 logger = logging.getLogger("vaultiq.nicegui.fraud")
@@ -49,6 +49,7 @@ FRAUD_SCENARIOS = {
 async def fraud_page():
     await ui.context.client.connected()
     inject_css()
+    nav_bar("/fraud")
 
     page_header(
         "🚨 Use Case 2: Fraud Intelligence Agent",

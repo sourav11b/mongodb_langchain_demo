@@ -6,7 +6,7 @@ import sys, os, logging, asyncio
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
-from nicegui_app.theme import inject_css, page_header
+from nicegui_app.theme import inject_css, nav_bar, page_header
 
 logger = logging.getLogger("vaultiq.nicegui.setup")
 
@@ -15,6 +15,7 @@ logger = logging.getLogger("vaultiq.nicegui.setup")
 async def setup_page():
     await ui.context.client.connected()
     inject_css()
+    nav_bar("/setup")
 
     page_header(
         "⚙️ Setup & Database Seeding",

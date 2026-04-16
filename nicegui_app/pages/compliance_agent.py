@@ -7,7 +7,7 @@ import sys, os, logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
-from nicegui_app.theme import (inject_css, page_header, render_tool_chips,
+from nicegui_app.theme import (inject_css, nav_bar, page_header, render_tool_chips,
                                show_spinner, render_answer_box)
 
 logger = logging.getLogger("vaultiq.nicegui.compliance")
@@ -37,18 +37,63 @@ async def compliance_page():
     state.setdefault("comp_result", None)
 
     inject_css()
+    nav_bar("/compliance")
 
     page_header(
-        "⚖️ Compliance Audit — Regulatory Intelligence",
-        "BSA/AML · OFAC screening · PEP checks · Graph-based AML network analysis",
-        '<span class="blog-feature-tag bft-vector">🔵 Vector Search</span>'
-        '<span class="blog-feature-tag bft-graph">🕸️ $graphLookup</span>'
+        "⚖️ Use Case 4: AML & Compliance Intelligence Agent",
+        "Autonomous regulatory review across BSA · FATCA · OFAC · GDPR · PSD2 — graph-powered AML network analysis",
+        '<span class="blog-feature-tag bft-vector">🔵 Atlas Vector Search</span>'
         '<span class="blog-feature-tag bft-mql">🟡 Text-to-MQL</span>'
-        '<span class="blog-feature-tag bft-mcp">🍃 MCP Server</span>'
-        '<span class="blog-feature-tag bft-smith">🔴 LangSmith</span>',
+        '<span class="blog-feature-tag bft-ckpt">🟣 MongoDB Checkpointer</span>'
+        '<span class="blog-feature-tag bft-smith">🔴 LangSmith Observability</span>',
     )
 
-    # ── Tab layout (mirrors Streamlit version) ────────────────────────────
+    # ── Info columns ──────────────────────────────────────────────────────
+    with ui.row().classes("w-full gap-4"):
+        with ui.column().classes("flex-grow"):
+            ui.label("Regulatory Frameworks Covered:").classes("font-bold text-sm")
+            regs = [
+                ("BSA/AML", "#FDEDEC", "#c0392b", "Currency Transaction Reports ($10K), SAR filing ($5K), structuring"),
+                ("FATCA",   "#EAFAF1", "#1a7340", "Foreign account reporting, withholding on non-compliant entities"),
+                ("OFAC",    "#FEF9E7", "#B7950B", "Real-time SDN list screening, sanctions exposure mapping"),
+                ("GDPR",    "#EBF5FB", "#2471A3", "Data retention rules, right to erasure, data minimisation"),
+                ("PSD2",    "#EBF5FB", "#2471A3", "Strong Customer Authentication thresholds for EU payments"),
+            ]
+            for reg, bg, color, desc in regs:
+                ui.html(f'<span style="background:{bg};color:{color};padding:3px 10px;border-radius:12px;'
+                        f'font-size:.75rem;font-weight:700;display:inline-block;margin:2px">{reg}</span>'
+                        f' <span style="font-size:.88rem">{desc}</span>')
+
+            ui.label("Autonomous Capabilities:").classes("font-bold text-sm mt-2")
+            caps = [
+                "📋 Semantic rule lookup (compliance vector search)",
+                "🕸️ Graph-based AML network analysis (layering detection)",
+                "📄 Unstructured case note analysis (AML trigger extraction)",
+                "💰 Threshold monitoring (BSA CTR + SAR thresholds)",
+                "📡 OFAC sanctions exposure mapping by IP country",
+                "📝 Autonomous SAR filing via FastMCP",
+            ]
+            for c in caps:
+                ui.label(c).classes("text-sm my-0")
+
+            ui.label("MCP Tools:").classes("font-bold text-sm mt-2")
+            ui.html('<span class="tool-badge-red">mcp_file_sar_compliance</span>'
+                    ' <span class="tool-badge-red">mcp_ofac_screen_compliance</span>')
+
+        with ui.column().style("min-width:260px; max-width:340px"):
+            ui.html("""<div class="memory-box">
+              <strong>🧠 Memory Architecture</strong><br><br>
+              <strong>🧩 Episodic Memory</strong><br>
+              Each compliance audit stored with full regulatory citation trail.<br><br>
+              <strong>📚 Semantic Memory</strong><br>
+              Compliance rules embedded via Voyage AI for intent-based retrieval.<br><br>
+              <strong>⚡ Working Memory</strong><br>
+              LangGraph <code>ComplianceAgentState</code> tracks violations, severity, remediation status.
+            </div>""")
+
+    ui.separator().classes("my-2")
+
+    # ── Tab layout ────────────────────────────────────────────────────────
     with ui.tabs().classes("w-full") as tabs:
         tab_preset = ui.tab("Preset Checks")
         tab_custom = ui.tab("Custom Investigation")

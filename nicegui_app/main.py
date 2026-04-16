@@ -147,8 +147,9 @@ app.on_startup(_atlas_startup_check)
 # ══════════════════════════════════════════════════════════════════════════════
 @ui.page("/")
 async def home():
-    from nicegui_app.theme import inject_css
+    from nicegui_app.theme import inject_css, nav_bar
     inject_css()
+    nav_bar("/")
 
     ui.html("""
     <div class="page-header">

@@ -86,13 +86,46 @@ CUSTOM_CSS = """
   0%, 100% { border-color:#006FCF; box-shadow:0 0 0 0 rgba(0,111,207,.3); }
   50% { border-color:#27ae60; box-shadow:0 0 12px 4px rgba(0,111,207,.15); }
 }
+
+/* ── Navigation bar ───────────────────────────────────────────────── */
+.nav-bar { background:#001A44; padding:.4rem 1.2rem; display:flex; align-items:center;
+  gap:.3rem; flex-wrap:wrap; border-bottom:2px solid #006FCF; }
+.nav-bar a { color:#B0C4DE; text-decoration:none; padding:.35rem .8rem; border-radius:6px;
+  font-size:.82rem; font-weight:600; transition:all .2s; }
+.nav-bar a:hover { background:rgba(255,255,255,.12); color:white; }
+.nav-bar a.active { background:#006FCF; color:white; }
+.nav-brand { color:white; font-weight:800; font-size:.95rem; margin-right:.8rem;
+  letter-spacing:-.02em; }
 </style>
 """
 
+NAV_ITEMS = [
+    ("🏠 Home",       "/"),
+    ("⚙️ Setup",      "/setup"),
+    ("🔍 Discovery",  "/discovery"),
+    ("🚨 Fraud",      "/fraud"),
+    ("🎁 Offers",     "/offers"),
+    ("⚖️ Compliance", "/compliance"),
+]
+
 
 def inject_css():
-    """Call once at the top of each page to add shared CSS."""
+    """Call once at the top of each page to add shared CSS + nav bar."""
     ui.add_head_html(CUSTOM_CSS)
+
+
+def nav_bar(current_path: str = ""):
+    """Render a persistent top navigation bar."""
+    links = ""
+    for label, path in NAV_ITEMS:
+        active = "active" if path == current_path else ""
+        links += f'<a href="{path}" class="{active}">{label}</a> '
+    ui.html(f"""
+    <div class="nav-bar">
+      <span class="nav-brand">🏦 VaultIQ</span>
+      {links}
+    </div>
+    """)
 
 
 def page_header(title: str, subtitle: str, tags_html: str = ""):
