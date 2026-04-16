@@ -29,6 +29,25 @@ st.markdown("""
   }
   [data-testid="stSidebar"] { background: linear-gradient(180deg, #001E2B 0%, #023047 100%); }
   [data-testid="stSidebar"] > div > div > div > * { color: white !important; }
+  /* Force ALL sidebar text white — nav links, labels, markdown, etc. */
+  [data-testid="stSidebar"] label, [data-testid="stSidebar"] p,
+  [data-testid="stSidebar"] span, [data-testid="stSidebar"] h1,
+  [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3,
+  [data-testid="stSidebar"] h4, [data-testid="stSidebar"] li,
+  [data-testid="stSidebar"] a,
+  [data-testid="stSidebar"] [data-testid="stMarkdownContainer"],
+  [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] * { color: white !important; }
+  /* Page nav links in sidebar */
+  [data-testid="stSidebarNav"] a, [data-testid="stSidebarNav"] span,
+  [data-testid="stSidebarNav"] li, [data-testid="stSidebarNav"] p,
+  [data-testid="stSidebarNav"] [data-testid="stMarkdownContainer"],
+  [data-testid="stSidebarNav"] [data-testid="stMarkdownContainer"] * { color: white !important; }
+  [data-testid="stSidebarNav"] a:hover span { color: #00ED64 !important; }
+  /* Rename "app" nav entry visually */
+  [data-testid="stSidebarNav"] li:first-child a span { font-size: 0; }
+  [data-testid="stSidebarNav"] li:first-child a span::after {
+    content: "🏦 VaultIQ Home"; font-size: 0.875rem; color: white !important;
+  }
   [data-testid="stSidebar"] .stMarkdown h1,
   [data-testid="stSidebar"] .stMarkdown h2,
   [data-testid="stSidebar"] .stMarkdown h3 { color: #00ED64 !important; }

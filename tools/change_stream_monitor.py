@@ -146,6 +146,13 @@ class ChangeStreamMonitor:
                             time.sleep(0.5)
                             continue
 
+                        op = change.get("operationType", "?")
+                        doc_key = change.get("documentKey", {})
+                        ts = datetime.now(timezone.utc)
+
+                        logger.info("[%s] Change detected: %s on %s key=%s",
+                                    label, op, coll_name, doc_key)
+
                         event = ChangeEvent(
                             label=label,
                             collection=coll_name,
