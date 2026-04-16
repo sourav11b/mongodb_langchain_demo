@@ -43,67 +43,70 @@ async def setup_page():
     with ui.row().classes("gap-2 mt-4 flex-wrap"):
 
         async def seed_data():
-            _log("🌱 Seeding database…")
+            _log("🌱 Seeding database (seed_all)…")
+            _log("  Creates: cardholders, merchants, transactions, offers, data_catalog, fraud_cases, compliance_rules, merchant_networks")
+            _log("  Also creates geospatial, vector, and FTS indexes.")
             try:
-                from data.seed_data import seed_database
-                counts = seed_database()
-                for coll, n in counts.items():
-                    _log(f"  ✅ {coll}: {n} documents")
-                _log("🌱 Seeding complete.")
+                from data.seed_data import seed_all
+                # seed_all prints to stdout — run in executor to not block UI
+                await asyncio.get_event_loop().run_in_executor(None, seed_all)
+                _log("🌱 Seeding complete!")
                 ui.notify("Seeding complete", type="positive")
             except Exception as e:
                 _log(f"  ❌ Seeding failed: {e}")
                 ui.notify(f"Seeding failed: {e}", type="negative")
 
         async def create_indexes():
-            _log("📐 Creating indexes…")
+            _log("📐 Creating indexes (requires db connection)…")
             try:
+                from pymongo import MongoClient
                 from data.seed_data import create_indexes as _create
-                result = _create()
-                for idx in result:
-                    _log(f"  ✅ {idx}")
-                _log("📐 Indexes created.")
+                client = MongoClient(MONGODB_URI)
+                db = client[MONGODB_DB_NAME]
+                await asyncio.get_event_loop().run_in_executor(None, _create, db)
+                client.close()
+                _log("📐 Indexes created (geospatial + vector + FTS).")
                 ui.notify("Indexes created", type="positive")
             except Exception as e:
                 _log(f"  ❌ Index creation failed: {e}")
                 ui.notify(f"Index creation failed: {e}", type="negative")
 
-        async def create_search_indexes():
-            _log("🔍 Creating Atlas Search indexes via Admin API…")
-            try:
-                from tools.atlas_cluster import ensure_search_indexes
-                result = await ensure_search_indexes()
-                for msg in result:
-                    _log(f"  ✅ {msg}")
-                _log("🔍 Search indexes done.")
-                ui.notify("Search indexes created", type="positive")
-            except Exception as e:
-                _log(f"  ❌ Search index creation failed: {e}")
-                ui.notify(f"Failed: {e}", type="negative")
-
         async def generate_embeddings():
-            _log("🧬 Generating embeddings (Voyage AI)…")
+            _log("🧬 Generating Voyage AI embeddings (python -m embeddings.voyage_client)…")
+            _log("  Embeds: offers, data_catalog, compliance_rules, merchants, cardholders, fraud_cases")
+            _log("  Model: voyage-finance-2 (1024-dim). This may take 1-2 minutes…")
             try:
-                from data.seed_data import generate_all_embeddings
-                stats = generate_all_embeddings()
-                for coll, n in stats.items():
-                    _log(f"  ✅ {coll}: {n} embeddings")
-                _log("🧬 Embeddings complete.")
-                ui.notify("Embeddings generated", type="positive")
+                import subprocess
+                repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: subprocess.run(
+                        [sys.executable, "-m", "embeddings.voyage_client"],
+                        capture_output=True, text=True, cwd=repo_root,
+                    ),
+                )
+                if result.returncode == 0:
+                    for line in result.stdout.strip().split("\n"):
+                        _log(f"  ✅ {line}")
+                    _log("🧬 Embeddings complete!")
+                    ui.notify("Embeddings generated", type="positive")
+                else:
+                    _log(f"  ❌ Embedding failed (exit code {result.returncode})")
+                    for line in result.stderr.strip().split("\n")[-10:]:
+                        _log(f"  ❌ {line}")
+                    ui.notify("Embedding generation failed", type="negative")
             except Exception as e:
                 _log(f"  ❌ Embedding generation failed: {e}")
                 ui.notify(f"Failed: {e}", type="negative")
 
         async def full_setup():
             await seed_data()
-            await create_indexes()
             await generate_embeddings()
 
-        ui.button("🌱 Seed Data", on_click=seed_data, color="primary")
-        ui.button("📐 Create Indexes", on_click=create_indexes, color="primary")
-        ui.button("🔍 Atlas Search Indexes", on_click=create_search_indexes, color="primary")
-        ui.button("🧬 Generate Embeddings", on_click=generate_embeddings, color="primary")
-        ui.button("🚀 Full Setup (all steps)", on_click=full_setup, color="deep-purple")
+        ui.button("🌱 Seed Data + Indexes", on_click=seed_data, color="primary")
+        ui.button("📐 Indexes Only", on_click=create_indexes, color="primary")
+        ui.button("🧬 Generate Embeddings (Voyage AI)", on_click=generate_embeddings, color="primary")
+        ui.button("🚀 Full Setup (Seed + Embed)", on_click=full_setup, color="deep-purple")
 
     # ── Collection stats ──────────────────────────────────────────────────
     ui.separator().classes("my-4")

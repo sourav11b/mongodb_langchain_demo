@@ -218,19 +218,54 @@ async def fraud_page():
     # ── Scenario injection handlers ───────────────────────────────────────
     async def _inject(key: str):
         try:
-            # Use the Streamlit page's inject_scenario which has the full data
-            from pages import _load_fraud_page_inject
-        except Exception:
-            pass
-        try:
             from pymongo import MongoClient
             from config import MONGODB_URI, MONGODB_DB_NAME
-            # Simple fallback: use seed_data if available
-            from data.seed_data import inject_fraud_scenario
-            inject_fraud_scenario(FRAUD_SCENARIOS[key]["id"])
-            ui.notify(f"Injected: {key}", type="positive")
+            from datetime import timedelta
+            import random
+
+            db = MongoClient(MONGODB_URI)[MONGODB_DB_NAME]
+            sc = FRAUD_SCENARIOS[key]
+            tag = sc["id"]
+            _tag_field = "_injected_scenario"
+
+            # Clean previous injection of same scenario
+            for col in ("transactions", "cardholders", "merchant_networks"):
+                db[col].delete_many({_tag_field: tag})
+
+            now = datetime.now(timezone.utc)
+            ch_id = sc["cardholder_id"]
+
+            # Create a demo cardholder
+            db.cardholders.insert_one({
+                "cardholder_id": ch_id,
+                "name": f"Demo {tag}",
+                "card_tier": "Platinum",
+                "home_city": "London",
+                "status": "active",
+                _tag_field: tag,
+            })
+
+            # Create demo transactions matching the scenario
+            txns = []
+            for i in range(5):
+                txns.append({
+                    "transaction_id": f"TXN_DEMO_{tag}_{i:03d}",
+                    "cardholder_id": ch_id,
+                    "amount": round(random.uniform(500, 9999), 2),
+                    "currency": "USD",
+                    "timestamp": now - timedelta(minutes=i * 3),
+                    "fraud_score": round(random.uniform(0.7, 0.99), 2),
+                    "is_flagged": True,
+                    "status": "pending_review",
+                    _tag_field: tag,
+                })
+            db.transactions.insert_many(txns)
+
+            ui.notify(f"✅ Injected: {key} — 1 cardholder + {len(txns)} transactions", type="positive")
+            logger.info("Injected scenario %s: 1 cardholder, %d txns", tag, len(txns))
         except Exception as e:
             ui.notify(f"Injection failed: {e}", type="negative")
+            logger.exception("Injection failed: %s", e)
 
     async def _clear_injected():
         try:
