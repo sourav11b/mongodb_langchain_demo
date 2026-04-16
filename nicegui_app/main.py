@@ -31,6 +31,65 @@ import nicegui_app.pages.fraud_intelligence  # noqa: F401  →  /fraud
 import nicegui_app.pages.personalised_offers  # noqa: F401  →  /offers
 import nicegui_app.pages.compliance_agent  # noqa: F401  →  /compliance
 
+logger = logging.getLogger("vaultiq.nicegui")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ATLAS CLUSTER STARTUP CHECK
+# Runs once when the server starts — pings MongoDB, auto-resumes if paused.
+# ══════════════════════════════════════════════════════════════════════════════
+async def _atlas_startup_check():
+    """Check Atlas cluster reachability; auto-resume if paused."""
+    from config import MONGODB_URI
+    from pymongo import MongoClient
+    from pymongo.errors import ConnectionFailure, ServerSelectionTimeoutError
+
+    # Step 1: direct pymongo ping
+    try:
+        hc = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+        hc.admin.command("ping")
+        hc.close()
+        logger.info("✅ Atlas cluster ping OK — cluster is reachable")
+        return
+    except (ConnectionFailure, ServerSelectionTimeoutError, Exception) as e:
+        logger.warning("⚠️ Atlas cluster ping FAILED: %s", e)
+
+    # Step 2: try Atlas Admin API to check & auto-resume
+    from tools.atlas_cluster import is_configured, get_cluster_status, resume_cluster, wait_for_ready
+
+    if not is_configured():
+        logger.error(
+            "❌ Cannot connect to MongoDB and Atlas API is not configured. "
+            "Set ATLAS_API_CLIENT_ID, ATLAS_API_CLIENT_SECRET, "
+            "ATLAS_API_PROJECT_ID, ATLAS_API_CLUSTER_NAME in .env"
+        )
+        return
+
+    status = get_cluster_status()
+    logger.info("Atlas API cluster status: %s", status)
+
+    if status.get("paused"):
+        logger.info("⏸️ Cluster is paused — sending resume request…")
+        resume_result = resume_cluster()
+        if resume_result.get("error"):
+            logger.error("❌ Failed to resume cluster: %s", resume_result["error"])
+            return
+        logger.info("✅ Resume request accepted. Waiting for cluster to become ready…")
+        ready = wait_for_ready(max_wait=300, poll_interval=15)
+        if ready.get("stateName") == "IDLE":
+            logger.info("✅ Atlas cluster ready (%ss)", ready.get("elapsed", "?"))
+        else:
+            logger.error("⚠️ Cluster not ready after waiting: %s", ready.get("stateName"))
+    else:
+        logger.error(
+            "🔌 Atlas API says cluster state is '%s' (not paused) but pymongo ping failed. "
+            "Check IP allowlist, MONGODB_URI, and firewall.",
+            status.get("stateName", "UNKNOWN"),
+        )
+
+
+app.on_startup(_atlas_startup_check)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # HOME PAGE — landing / navigation
