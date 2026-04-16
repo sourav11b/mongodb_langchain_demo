@@ -131,6 +131,53 @@ python -m streamlit run app.py
 
 ---
 
+## 🖥️ NiceGUI Edition (Alternative UI)
+
+An **async-native** alternative to the Streamlit app — same agents, same tools, same MongoDB backend, but with zero threading hacks.
+
+### Why NiceGUI?
+
+| Streamlit | NiceGUI |
+|---|---|
+| `ThreadPoolExecutor` → `_thread_target` → `new_event_loop()` → `ThreadedChildWatcher` | `await agent.ainvoke()` — one line |
+| Full `st.rerun()` on every interaction | Vue.js partial DOM updates |
+| Polling for agent responses | WebSocket push |
+
+### Run the NiceGUI app
+
+```bash
+# Install (in addition to existing requirements)
+pip install nicegui
+
+# Start on port 8502 (does NOT conflict with Streamlit on 8501)
+python nicegui_app/main.py
+```
+
+Open **http://localhost:8502** — same 5 pages:
+
+| Route | Page |
+|---|---|
+| `/` | Home / navigation |
+| `/setup` | Setup & Seeding |
+| `/discovery` | Data Discovery (multi-turn chat) |
+| `/fraud` | Fraud Intelligence (scenario injection) |
+| `/offers` | Personalised Offers (AI concierge) |
+| `/compliance` | Compliance Audit (BSA/AML/OFAC) |
+
+### Run both side-by-side
+
+```bash
+# Terminal 1 — Streamlit (port 8501)
+streamlit run app.py
+
+# Terminal 2 — NiceGUI (port 8502)
+python nicegui_app/main.py
+```
+
+Both apps share the same `agents/`, `config.py`, `data/`, and `tools/` modules.
+
+---
+
 ## 📄 References
 
 - **[LangChain × MongoDB Partnership Blog](https://blog.langchain.com/announcing-the-langchain-mongodb-partnership-the-ai-agent-stack-that-runs-on-the-database-you-already-trust/)** — the blog this showcase is built around

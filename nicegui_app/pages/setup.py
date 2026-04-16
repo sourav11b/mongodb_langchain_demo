@@ -1,0 +1,129 @@
+"""
+NiceGUI — Setup & Seeding page  (/setup)
+"""
+from __future__ import annotations
+import sys, os, logging
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+from nicegui import ui, app
+from nicegui_app.theme import inject_css, page_header
+
+logger = logging.getLogger("vaultiq.nicegui.setup")
+
+
+@ui.page("/setup")
+async def setup_page():
+    await ui.context.client.connected()
+    inject_css()
+
+    page_header(
+        "⚙️ Setup & Database Seeding",
+        "Initialize MongoDB collections, indexes, and vector embeddings",
+    )
+
+    log_area = ui.log(max_lines=80).classes("w-full h-64 font-mono text-xs")
+
+    def _log(msg: str):
+        logger.info(msg)
+        log_area.push(msg)
+
+    # ── Environment status ────────────────────────────────────────────────
+    from config import MONGODB_URI, MONGODB_DB_NAME, AZURE_OPENAI_ENDPOINT
+    with ui.card().classes("w-full"):
+        ui.label("Environment").classes("font-bold text-lg")
+        with ui.row().classes("gap-4 flex-wrap"):
+            _ok = "✅" if MONGODB_URI else "❌"
+            ui.label(f"{_ok} MongoDB URI").classes("text-sm")
+            _ok = "✅" if AZURE_OPENAI_ENDPOINT else "❌"
+            ui.label(f"{_ok} Azure OpenAI").classes("text-sm")
+            ui.label(f"📦 Database: {MONGODB_DB_NAME}").classes("text-sm font-mono")
+
+    # ── Action buttons ────────────────────────────────────────────────────
+    with ui.row().classes("gap-2 mt-4 flex-wrap"):
+
+        async def seed_data():
+            _log("🌱 Seeding database…")
+            try:
+                from data.seed_data import seed_database
+                counts = seed_database()
+                for coll, n in counts.items():
+                    _log(f"  ✅ {coll}: {n} documents")
+                _log("🌱 Seeding complete.")
+                ui.notify("Seeding complete", type="positive")
+            except Exception as e:
+                _log(f"  ❌ Seeding failed: {e}")
+                ui.notify(f"Seeding failed: {e}", type="negative")
+
+        async def create_indexes():
+            _log("📐 Creating indexes…")
+            try:
+                from data.seed_data import create_indexes as _create
+                result = _create()
+                for idx in result:
+                    _log(f"  ✅ {idx}")
+                _log("📐 Indexes created.")
+                ui.notify("Indexes created", type="positive")
+            except Exception as e:
+                _log(f"  ❌ Index creation failed: {e}")
+                ui.notify(f"Index creation failed: {e}", type="negative")
+
+        async def create_search_indexes():
+            _log("🔍 Creating Atlas Search indexes via Admin API…")
+            try:
+                from tools.atlas_cluster import ensure_search_indexes
+                result = await ensure_search_indexes()
+                for msg in result:
+                    _log(f"  ✅ {msg}")
+                _log("🔍 Search indexes done.")
+                ui.notify("Search indexes created", type="positive")
+            except Exception as e:
+                _log(f"  ❌ Search index creation failed: {e}")
+                ui.notify(f"Failed: {e}", type="negative")
+
+        async def generate_embeddings():
+            _log("🧬 Generating embeddings (Voyage AI)…")
+            try:
+                from data.seed_data import generate_all_embeddings
+                stats = generate_all_embeddings()
+                for coll, n in stats.items():
+                    _log(f"  ✅ {coll}: {n} embeddings")
+                _log("🧬 Embeddings complete.")
+                ui.notify("Embeddings generated", type="positive")
+            except Exception as e:
+                _log(f"  ❌ Embedding generation failed: {e}")
+                ui.notify(f"Failed: {e}", type="negative")
+
+        async def full_setup():
+            await seed_data()
+            await create_indexes()
+            await generate_embeddings()
+
+        ui.button("🌱 Seed Data", on_click=seed_data, color="primary")
+        ui.button("📐 Create Indexes", on_click=create_indexes, color="primary")
+        ui.button("🔍 Atlas Search Indexes", on_click=create_search_indexes, color="primary")
+        ui.button("🧬 Generate Embeddings", on_click=generate_embeddings, color="primary")
+        ui.button("🚀 Full Setup (all steps)", on_click=full_setup, color="deep-purple")
+
+    # ── Collection stats ──────────────────────────────────────────────────
+    ui.separator().classes("my-4")
+    stats_container = ui.column().classes("w-full")
+
+    async def refresh_stats():
+        stats_container.clear()
+        try:
+            from pymongo import MongoClient
+            client = MongoClient(MONGODB_URI)
+            db = client[MONGODB_DB_NAME]
+            with stats_container:
+                with ui.row().classes("gap-4 flex-wrap"):
+                    for coll_name in db.list_collection_names():
+                        cnt = db[coll_name].count_documents({})
+                        with ui.card().classes("stat-card").style("min-width:160px"):
+                            ui.label(coll_name).classes("font-bold text-sm text-blue-800")
+                            ui.label(f"{cnt:,} docs").classes("text-xl font-bold")
+        except Exception as e:
+            with stats_container:
+                ui.label(f"❌ Could not load stats: {e}").classes("text-red-600")
+
+    ui.button("🔄 Refresh Collection Stats", on_click=refresh_stats).props("outline")
+    await refresh_stats()
