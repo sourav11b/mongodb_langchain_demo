@@ -27,35 +27,65 @@ def _new_session_id() -> str:
     return f"disco-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}"
 
 
+# ── Page-local state (NOT in app.storage.tab — LangChain objects aren't serializable)
+_page_state: dict[str, dict] = {}
+
+
+def _get_state(tab_id: str) -> dict:
+    if tab_id not in _page_state:
+        _page_state[tab_id] = {
+            "sid": _new_session_id(), "msgs": [], "hist": [], "mem": False,
+        }
+    return _page_state[tab_id]
+
+
 @ui.page("/discovery")
 async def discovery_page():
     await ui.context.client.connected()
-    state = app.storage.tab
-    state.setdefault("disco_sid", _new_session_id())
-    state.setdefault("disco_msgs", [])
-    state.setdefault("disco_hist", [])
-    state.setdefault("disco_mem", False)
+    tab_id = str(app.storage.tab.get("_id", id(ui.context.client)))
+    state = _get_state(tab_id)
 
     inject_css()
 
-    # ── Sidebar: semantic memory ──────────────────────────────────────────
+    # ── Sidebar: semantic memory (loaded in background, never blocks page) ─
     with ui.left_drawer(value=True).style(
         "width:310px; background:linear-gradient(180deg,#003087,#006FCF);"
     ):
         ui.label("🧠 Semantic Memory").classes("text-white text-lg font-bold mt-4")
+        mem_container = ui.column().classes("w-full")
+        ui.label("Loading memories…").classes("text-white/60 text-xs")
+
+    async def _load_memories():
+        """Load memories in background — never blocks the page render."""
         try:
             from memory.mongodb_memory import SessionMemoryStore
-            sms = SessionMemoryStore("metadata_agent")
-            for m in sms.list_all_memories(limit=6):
-                ts = m.get("created_at", "")
-                ts = ts.strftime("%b %d %H:%M") if hasattr(ts, "strftime") else str(ts)[:16]
-                with ui.card().classes("w-full my-1").style(
-                    "border-top:3px solid #8e44ad; padding:.6rem"
-                ):
-                    ui.label(f"{m.get('memory_id','')} · {ts}").classes("text-purple-700 text-xs font-bold")
-                    ui.label(m.get("summary", "")[:100]).classes("text-gray-600 text-xs italic")
-        except Exception:
-            ui.label("Memory store unavailable").classes("text-white/60 text-xs")
+            import asyncio
+            sms = await asyncio.get_event_loop().run_in_executor(
+                None, SessionMemoryStore, "metadata_agent"
+            )
+            memories = await asyncio.get_event_loop().run_in_executor(
+                None, sms.list_all_memories, 6
+            )
+            mem_container.clear()
+            with mem_container:
+                if memories:
+                    for m in memories:
+                        ts = m.get("created_at", "")
+                        ts = ts.strftime("%b %d %H:%M") if hasattr(ts, "strftime") else str(ts)[:16]
+                        with ui.card().classes("w-full my-1").style(
+                            "border-top:3px solid #8e44ad; padding:.6rem"
+                        ):
+                            ui.label(f"{m.get('memory_id','')} · {ts}").classes("text-purple-700 text-xs font-bold")
+                            ui.label(m.get("summary", "")[:100]).classes("text-gray-600 text-xs italic")
+                else:
+                    ui.label("No memories yet.").classes("text-white/60 text-xs")
+        except Exception as e:
+            logger.warning("Memory load failed: %s", e)
+            mem_container.clear()
+            with mem_container:
+                ui.label("Memory store unavailable").classes("text-white/60 text-xs")
+
+    asyncio.ensure_future(_load_memories())
 
     # ── Header ────────────────────────────────────────────────────────────
     page_header(
@@ -70,12 +100,12 @@ async def discovery_page():
     )
 
     chat_box = ui.column().classes("w-full gap-1")
-    for turn in state["disco_msgs"]:
+    for turn in state["msgs"]:
         render_chat_bubble(chat_box, turn)
 
     # ── Quick Start ───────────────────────────────────────────────────────
     qs = ui.row().classes("w-full gap-2 flex-wrap")
-    if not state["disco_msgs"]:
+    if not state["msgs"]:
         with qs:
             ui.label("💡 Quick starts — each highlights a different feature:").classes("w-full text-sm font-semibold")
             for label, prompt in EXAMPLE_QUERIES:
@@ -87,7 +117,6 @@ async def discovery_page():
         ui.button("Send ➤", color="primary", on_click=lambda: _send())
     status = ui.label("").classes("text-xs text-gray-500")
 
-
     # ── Handlers ──────────────────────────────────────────────────────────
     async def _send():
         q = inp.value.strip()
@@ -97,15 +126,15 @@ async def discovery_page():
         qs.clear()
 
         user_turn = {"role": "user", "content": q}
-        state["disco_msgs"].append(user_turn)
+        state["msgs"].append(user_turn)
         render_chat_bubble(chat_box, user_turn)
         status.text = "🤖 Agent reasoning…"
 
         try:
             from agents.metadata_agent import _run_with_mcp
             result = await _run_with_mcp(
-                question=q, session_id=state["disco_sid"],
-                history=state["disco_hist"], memory_context=None,
+                question=q, session_id=state["sid"],
+                history=state["hist"], memory_context=None,
             )
         except Exception as e:
             logger.exception("Agent error: %s", e)
@@ -118,12 +147,12 @@ async def discovery_page():
         agent_turn = {"role": "assistant", "content": answer,
                       "tools": result.get("tool_calls", []),
                       "mcp": result.get("mcp_tools_active", False)}
-        state["disco_msgs"].append(agent_turn)
+        state["msgs"].append(agent_turn)
         render_chat_bubble(chat_box, agent_turn)
 
         from langchain_core.messages import HumanMessage, AIMessage
-        state["disco_hist"].append(HumanMessage(content=q))
-        state["disco_hist"].append(AIMessage(content=answer))
+        state["hist"].append(HumanMessage(content=q))
+        state["hist"].append(AIMessage(content=answer))
         status.text = f"✅ Done — Tools: {agent_turn['tools']}"
 
     def _fill(prompt: str):
@@ -135,13 +164,13 @@ async def discovery_page():
     # ── Actions ───────────────────────────────────────────────────────────
     with ui.row().classes("w-full gap-2 mt-2"):
         async def _clear():
-            state["disco_msgs"], state["disco_hist"] = [], []
-            state["disco_sid"] = _new_session_id()
+            state["msgs"], state["hist"] = [], []
+            state["sid"] = _new_session_id()
             chat_box.clear()
             status.text = ""
 
         async def _end_session():
-            if not state["disco_hist"]:
+            if not state["hist"]:
                 ui.notify("Nothing to store.", type="warning")
                 return
             try:
@@ -155,7 +184,7 @@ async def discovery_page():
                     azure_deployment=AZURE_OPENAI_DEPLOYMENT, temperature=0)
                 sms = SessionMemoryStore("metadata_agent")
                 stored = sms.condense_and_store(
-                    session_id=state["disco_sid"], messages=state["disco_hist"], llm=llm)
+                    session_id=state["sid"], messages=state["hist"], llm=llm)
                 ui.notify(f"✅ Stored: {stored.get('memory_id')}", type="positive")
             except Exception as e:
                 ui.notify(f"Failed: {e}", type="negative")

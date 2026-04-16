@@ -2,7 +2,7 @@
 NiceGUI — Setup & Seeding page  (/setup)
 """
 from __future__ import annotations
-import sys, os, logging
+import sys, os, logging, asyncio
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
@@ -110,20 +110,29 @@ async def setup_page():
 
     async def refresh_stats():
         stats_container.clear()
+        with stats_container:
+            ui.label("Loading…").classes("text-gray-500 text-sm")
         try:
+            import asyncio
             from pymongo import MongoClient
-            client = MongoClient(MONGODB_URI)
-            db = client[MONGODB_DB_NAME]
+
+            def _fetch():
+                client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
+                db = client[MONGODB_DB_NAME]
+                return {c: db[c].count_documents({}) for c in db.list_collection_names()}
+
+            counts = await asyncio.get_event_loop().run_in_executor(None, _fetch)
+            stats_container.clear()
             with stats_container:
                 with ui.row().classes("gap-4 flex-wrap"):
-                    for coll_name in db.list_collection_names():
-                        cnt = db[coll_name].count_documents({})
+                    for coll_name, cnt in counts.items():
                         with ui.card().classes("stat-card").style("min-width:160px"):
                             ui.label(coll_name).classes("font-bold text-sm text-blue-800")
                             ui.label(f"{cnt:,} docs").classes("text-xl font-bold")
         except Exception as e:
+            stats_container.clear()
             with stats_container:
                 ui.label(f"❌ Could not load stats: {e}").classes("text-red-600")
 
     ui.button("🔄 Refresh Collection Stats", on_click=refresh_stats).props("outline")
-    await refresh_stats()
+    asyncio.ensure_future(refresh_stats())

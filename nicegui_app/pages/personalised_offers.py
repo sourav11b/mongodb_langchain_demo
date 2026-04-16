@@ -21,12 +21,21 @@ EXAMPLE_PROMPTS = [
 ]
 
 
+# ── Page-local state (LangChain objects aren't JSON-serializable) ─────────────
+_page_state: dict[str, dict] = {}
+
+
+def _get_state(tab_id: str) -> dict:
+    if tab_id not in _page_state:
+        _page_state[tab_id] = {"msgs": [], "hist": []}
+    return _page_state[tab_id]
+
+
 @ui.page("/offers")
 async def offers_page():
     await ui.context.client.connected()
-    state = app.storage.tab
-    state.setdefault("offers_msgs", [])
-    state.setdefault("offers_hist", [])
+    tab_id = str(app.storage.tab.get("_id", id(ui.context.client)))
+    state = _get_state(tab_id)
 
     inject_css()
 
@@ -53,12 +62,12 @@ async def offers_page():
     )
 
     chat_box = ui.column().classes("w-full gap-1")
-    for turn in state["offers_msgs"]:
+    for turn in state["msgs"]:
         render_chat_bubble(chat_box, turn)
 
     # ── Quick Start ───────────────────────────────────────────────────────
     qs = ui.row().classes("w-full gap-2 flex-wrap")
-    if not state["offers_msgs"]:
+    if not state["msgs"]:
         with qs:
             ui.label("💡 Quick starts — each highlights a different feature:").classes("w-full text-sm font-semibold")
             for label, prompt in EXAMPLE_PROMPTS:
@@ -79,7 +88,7 @@ async def offers_page():
         qs.clear()
 
         user_turn = {"role": "user", "content": q}
-        state["offers_msgs"].append(user_turn)
+        state["msgs"].append(user_turn)
         render_chat_bubble(chat_box, user_turn)
         status.text = "🤖 Concierge thinking…"
 
@@ -87,7 +96,7 @@ async def offers_page():
             from agents.offers_agent import run_offers_chat
             result = run_offers_chat(
                 question=q, cardholder_id=ch_id.value,
-                history=state["offers_hist"],
+                history=state["hist"],
             )
         except Exception as e:
             logger.exception("Offers agent error: %s", e)
@@ -96,12 +105,12 @@ async def offers_page():
         answer = result.get("answer", "") or "⚠️ Empty response."
         agent_turn = {"role": "assistant", "content": answer,
                       "tools": result.get("tool_calls", []), "mcp": False}
-        state["offers_msgs"].append(agent_turn)
+        state["msgs"].append(agent_turn)
         render_chat_bubble(chat_box, agent_turn)
 
         from langchain_core.messages import HumanMessage, AIMessage
-        state["offers_hist"].append(HumanMessage(content=q))
-        state["offers_hist"].append(AIMessage(content=answer))
+        state["hist"].append(HumanMessage(content=q))
+        state["hist"].append(AIMessage(content=answer))
         status.text = f"✅ Done — Tools: {agent_turn['tools']}"
 
     def _fill(prompt: str):
@@ -113,7 +122,7 @@ async def offers_page():
     # ── Actions ───────────────────────────────────────────────────────────
     with ui.row().classes("w-full gap-2 mt-2"):
         async def _clear():
-            state["offers_msgs"], state["offers_hist"] = [], []
+            state["msgs"], state["hist"] = [], []
             chat_box.clear()
             status.text = ""
 
