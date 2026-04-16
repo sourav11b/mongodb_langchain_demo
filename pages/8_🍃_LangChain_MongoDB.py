@@ -409,10 +409,16 @@ Provides tools that auto-discover schemas, generate MQL, validate queries, and e
         "Count transactions over 5000 dollars",
     ]
     st.markdown("**🟡 Sample Natural-Language Queries:**")
-    for i, sq in enumerate(SAMPLE_NL_QUERIES):
-        if st.button(f"📋 {sq}", key=f"tk_s_{i}", use_container_width=True):
-            st.session_state["tk_query_val"] = sq
-    tk_query = st.text_input("Or type your own:", value=st.session_state.get("tk_query_val", ""), key="tk_q")
+    selected_sample = st.selectbox(
+        "Pick a sample query:",
+        [""] + SAMPLE_NL_QUERIES,
+        format_func=lambda x: "(select a sample)" if x == "" else x,
+        key="tk_sample_select",
+    )
+    default_val = selected_sample if selected_sample else ""
+    tk_query = st.text_input("Or type your own:", value=default_val, key="tk_q_input")
+    # Use whichever has content — typed overrides selection
+    tk_query = tk_query.strip() if tk_query.strip() else selected_sample
     c_tools, c_run = st.columns(2)
     with c_tools:
         if st.button("🔧 Show Toolkit Tools", key="run_tk"):
