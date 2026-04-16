@@ -260,11 +260,16 @@ def demo_graph_store(text: str = "Cardholder CH_0005 is a Platinum member in Lon
     """Build a knowledge graph from text via MongoDBGraphStore."""
     from langchain_mongodb.graphrag.graph import MongoDBGraphStore
     from langchain_core.documents import Document
+    from pymongo import MongoClient
 
-    graph_store = MongoDBGraphStore.from_connection_string(
-        connection_string=MONGODB_URI,
-        database_name=MONGODB_DB_NAME,
-        collection_name="langchain_graph_demo",
+    client = MongoClient(MONGODB_URI)
+    db = client[MONGODB_DB_NAME]
+    coll_name = "langchain_graph_demo"
+    if coll_name not in db.list_collection_names():
+        db.create_collection(coll_name)
+
+    graph_store = MongoDBGraphStore(
+        collection=db[coll_name],
         entity_extraction_model=_get_llm(),
     )
 

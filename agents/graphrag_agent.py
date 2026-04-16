@@ -70,16 +70,29 @@ def _get_llm():
 
 
 def get_graph_store() -> MongoDBGraphStore:
-    """Create and return a MongoDBGraphStore connected to Atlas."""
+    """Create and return a MongoDBGraphStore connected to Atlas.
+
+    Uses a pre-existing collection reference to avoid the
+    'collection already exists' error on repeated calls.
+    """
+    from pymongo import MongoClient
+
     llm = _get_llm()
-    return MongoDBGraphStore.from_connection_string(
-        connection_string=MONGODB_URI,
-        database_name=MONGODB_DB_NAME,
-        collection_name=GRAPH_COLLECTION,
+    client = MongoClient(MONGODB_URI)
+    db = client[MONGODB_DB_NAME]
+
+    # Ensure collection exists (no-op if it already does)
+    if GRAPH_COLLECTION not in db.list_collection_names():
+        db.create_collection(GRAPH_COLLECTION)
+
+    collection = db[GRAPH_COLLECTION]
+
+    return MongoDBGraphStore(
+        collection=collection,
         entity_extraction_model=llm,
         allowed_entity_types=ALLOWED_ENTITY_TYPES,
         allowed_relationship_types=ALLOWED_RELATIONSHIP_TYPES,
-        entity_examples=ENTITY_EXAMPLES,
+        entity_examples="\n".join(ENTITY_EXAMPLES),
     )
 
 
