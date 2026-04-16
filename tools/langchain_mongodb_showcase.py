@@ -64,15 +64,24 @@ def demo_vector_search(query: str = "high cashback dining offers", collection: s
     )
 
     t0 = time.time()
-    docs = vs.similarity_search(query, k=k)
+    docs_with_scores = vs.similarity_search_with_score(query, k=k)
     elapsed = time.time() - t0
     client.close()
+
+    results = []
+    for doc, score in docs_with_scores:
+        meta = {k: v for k, v in doc.metadata.items() if k != "embedding"}
+        results.append({
+            "content": doc.page_content[:400],
+            "score": round(score, 4),
+            "metadata": meta,
+        })
 
     return {
         "class": "MongoDBAtlasVectorSearch",
         "query": query,
-        "results": [{"content": d.page_content[:300], "metadata": d.metadata} for d in docs],
-        "count": len(docs),
+        "results": results,
+        "count": len(results),
         "elapsed_ms": round(elapsed * 1000),
     }
 
@@ -103,6 +112,7 @@ def demo_fulltext_search(query: str = "3x points dining cashback",
         search_index_name=index_name,
         search_field=search_field,
         top_k=k,
+        include_scores=True,
     )
 
     t0 = time.time()
@@ -110,11 +120,21 @@ def demo_fulltext_search(query: str = "3x points dining cashback",
     elapsed = time.time() - t0
     client.close()
 
+    results = []
+    for d in docs:
+        meta = {k: v for k, v in d.metadata.items() if k != "embedding"}
+        score = meta.pop("score", None)
+        results.append({
+            "content": d.page_content[:400],
+            "score": round(score, 4) if score else None,
+            "metadata": meta,
+        })
+
     return {
         "class": "MongoDBAtlasFullTextSearchRetriever",
         "query": query,
-        "results": [{"content": d.page_content[:300], "metadata": d.metadata} for d in docs],
-        "count": len(docs),
+        "results": results,
+        "count": len(results),
         "elapsed_ms": round(elapsed * 1000),
         "index_used": index_name,
         "search_field": search_field,
@@ -158,11 +178,21 @@ def demo_hybrid_search(query: str = "rewards points for travel purchases",
     elapsed = time.time() - t0
     client.close()
 
+    results = []
+    for d in docs:
+        meta = {k: v for k, v in d.metadata.items() if k != "embedding"}
+        score = meta.pop("score", meta.pop("rank_score", None))
+        results.append({
+            "content": d.page_content[:400],
+            "score": round(score, 4) if score else None,
+            "metadata": meta,
+        })
+
     return {
         "class": "MongoDBAtlasHybridSearchRetriever",
         "query": query,
-        "results": [{"content": d.page_content[:300], "metadata": d.metadata} for d in docs],
-        "count": len(docs),
+        "results": results,
+        "count": len(results),
         "elapsed_ms": round(elapsed * 1000),
     }
 
@@ -300,21 +330,33 @@ def demo_graph_store(text: str = "Cardholder CH_0005 is a Platinum member in Lon
     graph_store.add_documents([doc])
     elapsed = time.time() - t0
 
-    # Query the graph
+    # Query the graph — extract entity names and traverse
     entities = graph_store.extract_entity_names(text)
     related = []
-    for ent in entities[:2]:
+    if entities:
         try:
-            r = graph_store.related_entities(ent)
-            related.extend(r)
-        except Exception:
-            pass
+            # related_entities takes List[str], not a single string
+            r = graph_store.related_entities(entities)
+            related = r
+        except Exception as e:
+            logger.warning("related_entities error: %s", e)
+
+    # Serialize entities for JSON
+    related_serialized = []
+    for ent in related[:10]:
+        if hasattr(ent, "__dict__"):
+            related_serialized.append({k: v for k, v in ent.__dict__.items() if not k.startswith("_")})
+        elif isinstance(ent, dict):
+            related_serialized.append(ent)
+        else:
+            related_serialized.append(str(ent))
 
     return {
         "class": "MongoDBGraphStore",
         "input_text": text[:200],
         "entities_extracted": entities,
-        "related_entities": related[:10],
+        "related_entities": related_serialized,
+        "entity_count_in_graph": graph_store.collection.count_documents({}),
         "build_ms": round(elapsed * 1000),
     }
 

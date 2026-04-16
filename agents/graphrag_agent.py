@@ -178,15 +178,28 @@ def get_related_entities(entity_name: str, max_depth: int = 2) -> dict:
     """Find all entities related to a given entity via graph traversal.
 
     Uses $graphLookup under the hood to traverse the knowledge graph.
+    Note: related_entities() takes List[str], not a single string.
 
     Returns: {"entity": str, "related": list[dict]}
     """
     graph_store = get_graph_store()
-    related = graph_store.related_entities(entity_name, max_depth=max_depth)
+    # related_entities takes a list of starting entity names
+    related = graph_store.related_entities([entity_name], max_depth=max_depth)
+
+    # Serialize results
+    serialized = []
+    for ent in related:
+        if hasattr(ent, "__dict__"):
+            serialized.append({k: v for k, v in ent.__dict__.items() if not k.startswith("_")})
+        elif isinstance(ent, dict):
+            serialized.append(ent)
+        else:
+            serialized.append(str(ent))
+
     return {
         "entity": entity_name,
-        "related": related,
-        "count": len(related),
+        "related": serialized,
+        "count": len(serialized),
     }
 
 

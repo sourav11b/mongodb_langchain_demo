@@ -101,8 +101,11 @@ Supports **pre-filtering** — narrow the ANN candidate set inside the index.
             from tools.langchain_mongodb_showcase import demo_vector_search
             r = demo_vector_search(vs_query)
             st.markdown(f'<div class="demo-box">Found <strong>{r["count"]}</strong> results in <strong>{r["elapsed_ms"]}ms</strong></div>', unsafe_allow_html=True)
-            for doc in r["results"]:
-                st.markdown(f"- {doc['content'][:200]}")
+            for i, doc in enumerate(r["results"]):
+                score_str = f"**Score: `{doc['score']}`**" if doc.get("score") is not None else ""
+                with st.expander(f"Result {i+1} {score_str} — {doc['content'][:80]}…", expanded=(i == 0)):
+                    st.markdown(doc["content"])
+                    st.json(doc.get("metadata", {}))
 with col1b:
     st.markdown("""<div class="code-snippet">
 from langchain_mongodb import MongoDBAtlasVectorSearch<br><br>
@@ -127,9 +130,12 @@ with col2a:
         with st.spinner("Running full-text search…"):
             from tools.langchain_mongodb_showcase import demo_fulltext_search
             r = demo_fulltext_search(fts_query)
-            st.markdown(f'<div class="demo-box">Found <strong>{r["count"]}</strong> results in <strong>{r["elapsed_ms"]}ms</strong></div>', unsafe_allow_html=True)
-            for doc in r["results"]:
-                st.markdown(f"- {doc['content'][:200]}")
+            st.markdown(f'<div class="demo-box">Found <strong>{r["count"]}</strong> results in <strong>{r["elapsed_ms"]}ms</strong> · Index: <code>{r.get("index_used","")}</code></div>', unsafe_allow_html=True)
+            for i, doc in enumerate(r["results"]):
+                score_str = f"**Score: `{doc['score']}`**" if doc.get("score") is not None else ""
+                with st.expander(f"Result {i+1} {score_str} — {doc['content'][:80]}…", expanded=(i == 0)):
+                    st.markdown(doc["content"])
+                    st.json(doc.get("metadata", {}))
 with col2b:
     st.markdown("""<div class="code-snippet">
 from langchain_mongodb.retrievers import \\<br>
@@ -154,9 +160,12 @@ with col3a:
         with st.spinner("Running hybrid search…"):
             from tools.langchain_mongodb_showcase import demo_hybrid_search
             r = demo_hybrid_search(hy_query)
-            st.markdown(f'<div class="demo-box">Found <strong>{r["count"]}</strong> results in <strong>{r["elapsed_ms"]}ms</strong></div>', unsafe_allow_html=True)
-            for doc in r["results"]:
-                st.markdown(f"- {doc['content'][:200]}")
+            st.markdown(f'<div class="demo-box">Found <strong>{r["count"]}</strong> results in <strong>{r["elapsed_ms"]}ms</strong> · Method: reciprocal rank fusion</div>', unsafe_allow_html=True)
+            for i, doc in enumerate(r["results"]):
+                score_str = f"**Score: `{doc['score']}`**" if doc.get("score") is not None else ""
+                with st.expander(f"Result {i+1} {score_str} — {doc['content'][:80]}…", expanded=(i == 0)):
+                    st.markdown(doc["content"])
+                    st.json(doc.get("metadata", {}))
 with col3b:
     st.markdown("""<div class="code-snippet">
 from langchain_mongodb.retrievers import \\<br>
@@ -290,16 +299,21 @@ then stores them as MongoDB documents. Query via graph traversal.
         with st.spinner("LLM extracting entities → building graph…"):
             from tools.langchain_mongodb_showcase import demo_graph_store
             r = demo_graph_store(graph_text)
-            st.markdown(f'<div class="demo-box">Extracted <strong>{len(r["entities_extracted"])}</strong> entities in <strong>{r["build_ms"]}ms</strong></div>', unsafe_allow_html=True)
+            graph_total = r.get("entity_count_in_graph", "?")
+            st.markdown(f'<div class="demo-box">Extracted <strong>{len(r["entities_extracted"])}</strong> entities in <strong>{r["build_ms"]}ms</strong> · Total in graph: <strong>{graph_total}</strong></div>', unsafe_allow_html=True)
             ent_chips = " ".join(f'<span class="feat-tag ft-purple">{e}</span>' for e in r["entities_extracted"])
-            st.markdown(f"**Entities extracted:** {ent_chips}", unsafe_allow_html=True)
+            st.markdown(f"**Entities extracted by LLM:** {ent_chips}", unsafe_allow_html=True)
             if r["related_entities"]:
-                st.markdown("**🔗 Graph traversal — Related entities found:**")
+                st.markdown(f"**🔗 Graph traversal — {len(r['related_entities'])} related entities found:**")
                 for i, rel in enumerate(r["related_entities"][:8]):
-                    with st.expander(f"Related entity {i+1}", expanded=(i < 2)):
-                        st.json(rel)
+                    label = rel.get("_id", rel) if isinstance(rel, dict) else str(rel)
+                    with st.expander(f"🔗 {label}", expanded=(i < 3)):
+                        if isinstance(rel, dict):
+                            st.json(rel)
+                        else:
+                            st.text(str(rel))
             else:
-                st.info("No related entities yet — entities have been stored. Run again with more text to build connections.")
+                st.info("Entities stored in graph. Run the demo again — the graph needs 2+ runs to build connections between entities.")
 with col7b:
     st.markdown("""<div class="code-snippet">
 from langchain_mongodb.graphrag.graph \\<br>
@@ -389,14 +403,16 @@ Provides tools that auto-discover schemas, generate MQL, validate queries, and e
     SAMPLE_NL_QUERIES = [
         "How many Platinum cardholders are there?",
         "Show me the top 5 merchants by transaction count",
-        "Find all fraud cases with severity 'critical'",
-        "What compliance rules apply to jurisdiction 'US-Federal'?",
-        "List all offers in the 'Travel' category",
-        "Count transactions over $5,000 in the last month",
+        "Find all fraud cases with severity critical",
+        "What compliance rules apply to jurisdiction US-Federal?",
+        "List all offers in the Travel category",
+        "Count transactions over 5000 dollars",
     ]
     st.markdown("**🟡 Sample Natural-Language Queries:**")
-    selected_q = st.selectbox("Pick a sample or type your own:", ["(type your own)"] + SAMPLE_NL_QUERIES, key="tk_sample")
-    tk_query = st.text_input("Natural language query:", value="" if selected_q == "(type your own)" else selected_q, key="tk_q")
+    for i, sq in enumerate(SAMPLE_NL_QUERIES):
+        if st.button(f"📋 {sq}", key=f"tk_s_{i}", use_container_width=True):
+            st.session_state["tk_query_val"] = sq
+    tk_query = st.text_input("Or type your own:", value=st.session_state.get("tk_query_val", ""), key="tk_q")
     c_tools, c_run = st.columns(2)
     with c_tools:
         if st.button("🔧 Show Toolkit Tools", key="run_tk"):
