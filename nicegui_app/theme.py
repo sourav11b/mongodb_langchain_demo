@@ -51,12 +51,32 @@ def inject_css():
 
 
 def page_header(title: str, subtitle: str, tags_html: str = ""):
-    """Render a gradient page header with feature tags."""
+    """Render a gradient page header with feature tags + Atlas status banner."""
+    atlas_status_banner()
     ui.html(f"""
     <div class="page-header">
       <h2>{title}</h2>
       <p>{subtitle}</p>
       {"<p style='margin-top:.6rem;'>" + tags_html + "</p>" if tags_html else ""}
+    </div>
+    """)
+
+
+def atlas_status_banner():
+    """Show a banner if Atlas cluster is not OK (set by startup check in main.py)."""
+    from nicegui import app as _app
+    status = _app.storage.general.get("atlas_status", "unknown")
+    message = _app.storage.general.get("atlas_message", "")
+    if status == "ok" or not message:
+        return
+    color_map = {"resuming": "#FFF3CD", "error": "#F8D7DA", "unknown": "#E2E8F0"}
+    border_map = {"resuming": "#FFD700", "error": "#DC3545", "unknown": "#94a3b8"}
+    bg = color_map.get(status, "#E2E8F0")
+    border = border_map.get(status, "#94a3b8")
+    ui.html(f"""
+    <div style="background:{bg}; border:2px solid {border}; border-radius:8px;
+                padding:0.8rem 1.2rem; margin-bottom:1rem; font-size:0.9rem;">
+      <strong>🏥 Atlas Cluster Status:</strong> {message}
     </div>
     """)
 
