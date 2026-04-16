@@ -23,6 +23,8 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)-8s | %(name)-40s | %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+# Suppress noisy "not found" warnings from browser probing for Streamlit endpoints
+logging.getLogger("nicegui").setLevel(logging.ERROR)
 
 # ── Import page modules (each registers its own @ui.page routes) ─────────────
 import nicegui_app.pages.setup            # noqa: F401  →  /setup
@@ -135,7 +137,8 @@ Same agents and tools as the Streamlit app.
 if __name__ in {"__main__", "__mp_main__"}:
     ui.run(
         title="VaultIQ | NiceGUI",
-        port=8502,           # 8502 so it doesn't clash with Streamlit on 8501
+        host="0.0.0.0",      # bind all interfaces (needed for EC2 public IP)
+        port=8502,            # 8502 so it doesn't clash with Streamlit on 8501
         reload=True,
         storage_secret="vaultiq-nicegui",
     )
