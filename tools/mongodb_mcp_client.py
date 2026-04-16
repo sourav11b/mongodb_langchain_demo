@@ -44,6 +44,7 @@ import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from config import (
     MONGODB_URI,
+    MONGODB_DB_NAME,
     MONGODB_MCP_SERVER_URL,
     MONGODB_MCP_TRANSPORT,
     MONGODB_MCP_READ_ONLY,
@@ -56,6 +57,21 @@ TransportMode = Literal["embedded", "http"]
 
 
 # ── Per-transport connection configs ──────────────────────────────────────────
+
+def _mcp_connection_string() -> str:
+    """
+    Build MCP connection string with the database name in the URI path.
+    The MCP server uses the database from the connection string; without it
+    the server defaults to the collection name as the database, causing
+    'ns does not exist' errors (e.g. transactions.transactions).
+    """
+    from urllib.parse import urlparse, urlunparse
+    parsed = urlparse(MONGODB_URI)
+    # Only inject DB name if the path is empty or just "/"
+    if parsed.path in ("", "/"):
+        parsed = parsed._replace(path=f"/{MONGODB_DB_NAME}")
+    return urlunparse(parsed)
+
 
 def _embedded_config() -> dict:
     """
@@ -77,7 +93,7 @@ def _embedded_config() -> dict:
             ],
             "transport": "stdio",
             "env": {
-                "MDB_MCP_CONNECTION_STRING": MONGODB_URI,
+                "MDB_MCP_CONNECTION_STRING": _mcp_connection_string(),
                 "MDB_MCP_TELEMETRY":         "disabled",
                 "MDB_MCP_READ_ONLY":         str(MONGODB_MCP_READ_ONLY).lower(),
                 "MDB_MCP_DISABLED_TOOLS":    _DISABLED_TOOLS,

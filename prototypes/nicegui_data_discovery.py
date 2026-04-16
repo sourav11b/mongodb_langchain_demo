@@ -89,7 +89,8 @@ async def data_discovery_page():
     Entire page is an async function — no threading hacks needed.
     All `await` calls run natively in NiceGUI's uvicorn event loop.
     """
-    # ── Per-tab state (replaces st.session_state) ─────────────────────────
+    # ── Wait for WebSocket before accessing per-tab storage ──────────────
+    await ui.context.client.connected()
     state = app.storage.tab
     state.setdefault("session_id", _new_session_id())
     state.setdefault("messages", [])       # list[dict]
