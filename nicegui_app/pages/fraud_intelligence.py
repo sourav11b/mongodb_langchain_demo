@@ -1,37 +1,46 @@
 """
 NiceGUI — Fraud Intelligence page  (/fraud)
+Matches the Streamlit Fraud Intelligence page: scenario injection sidebar,
+investigation pipeline info, cardholder select, formatted result output.
 """
 from __future__ import annotations
-import sys, os, logging, json
-from datetime import datetime, timezone
+import sys, os, logging, asyncio
+from datetime import datetime, timezone, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
-from nicegui_app.theme import inject_css, page_header, render_chat_bubble
+from nicegui_app.theme import (inject_css, page_header, render_tool_chips,
+                               show_spinner, render_answer_box, _md_to_html)
 
 logger = logging.getLogger("vaultiq.nicegui.fraud")
 
+# ── Scenario definitions (mirrors Streamlit page) ────────────────────────────
 FRAUD_SCENARIOS = {
-    "velocity_spike": {
-        "label": "⚡ Velocity Spike",
-        "desc": "Inject 8 rapid-fire transactions for CH_0005 within 2 minutes.",
-        "collection": "transactions",
+    "🛒 Card-Not-Present Burst": {
+        "id": "cnp_burst",
+        "desc": "8 rapid online transactions across 5 countries in 20 min — classic CNP fraud.",
+        "cardholder_id": "CH_DEMO_CNP_001",
     },
-    "geo_impossible": {
-        "label": "🌍 Impossible Travel",
-        "desc": "Inject two large transactions for CH_0003 — London then Tokyo, 30 min apart.",
-        "collection": "transactions",
+    "🔐 Account Takeover (ATO)": {
+        "id": "ato_attack",
+        "desc": "Password reset from new device, then immediate high-value purchases.",
+        "cardholder_id": "CH_DEMO_ATO_001",
     },
-    "merchant_ring": {
-        "label": "🕸️ Merchant Ring",
-        "desc": "Create a 4-merchant fraud ring cluster with shared terminals.",
-        "collection": "merchant_networks",
+    "🕸️ Merchant Fraud Ring": {
+        "id": "merchant_ring",
+        "desc": "3 shell merchants laundering money through circular transactions ($graphLookup).",
+        "cardholder_id": "CH_DEMO_RING_001",
     },
-    "structuring": {
-        "label": "💵 Structuring",
-        "desc": "Inject 12 cash-equivalent transactions just under $9,900 for CH_0007.",
-        "collection": "transactions",
+    "✈️ Impossible Travel": {
+        "id": "impossible_travel",
+        "desc": "In-store London, then Tokyo 45 min later — physically impossible.",
+        "cardholder_id": "CH_DEMO_TRAVEL_001",
+    },
+    "🏛️ Sanctions / PEP Hit": {
+        "id": "sanctions_pep",
+        "desc": "PEP with transactions to sanctioned regions — triggers OFAC screening.",
+        "cardholder_id": "CH_DEMO_PEP_001",
     },
 }
 
@@ -39,93 +48,198 @@ FRAUD_SCENARIOS = {
 @ui.page("/fraud")
 async def fraud_page():
     await ui.context.client.connected()
-    state = app.storage.tab
-    state.setdefault("fraud_result", None)
-    state.setdefault("fraud_scenarios", [])
-
     inject_css()
+
     page_header(
-        "🚨 Fraud Intelligence — Real-Time Detection",
-        "Graph analysis · Velocity checks · Geo-impossible travel · MCP tools",
-        '<span class="blog-feature-tag bft-graph">🕸️ $graphLookup</span>'
-        '<span class="blog-feature-tag bft-mql">🟡 Text-to-MQL</span>'
-        '<span class="blog-feature-tag bft-mcp">🍃 MCP Server</span>'
-        '<span class="blog-feature-tag bft-smith">🔴 LangSmith</span>',
+        "🚨 Use Case 2: Fraud Intelligence Agent",
+        "Autonomous multi-step fraud detection, investigation, and remediation",
+        '<span class="blog-feature-tag bft-vector">🔵 Atlas Vector Search</span>'
+        '<span class="blog-feature-tag bft-ckpt">🟣 MongoDB Checkpointer</span>'
+        '<span class="blog-feature-tag bft-smith">🔴 LangSmith Observability</span>',
     )
 
     # ── Sidebar: scenario injection ───────────────────────────────────────
     with ui.left_drawer(value=True).style(
         "width:310px; background:linear-gradient(180deg,#7f1d1d,#b91c1c);"
     ):
-        ui.label("🧪 Scenario Injection").classes("text-white text-lg font-bold mt-4")
-        ui.label("Inject test data to trigger fraud patterns").classes("text-white/70 text-xs mb-2")
+        ui.label("🧪 Fraud Scenario Injection").classes("text-white text-lg font-bold mt-4")
+        ui.html('<p style="color:rgba(255,255,255,.7);font-size:.78rem;">Inject realistic fraud '
+                'patterns into MongoDB so the agent has live data to detect and investigate.</p>')
 
         for key, sc in FRAUD_SCENARIOS.items():
-            with ui.card().classes("scenario-card w-full"):
-                ui.label(sc["label"]).classes("font-bold text-sm")
+            with ui.expansion(key).classes("w-full bg-white/90 rounded my-1"):
                 ui.label(sc["desc"]).classes("text-xs text-gray-700")
-                ui.button(
-                    "Inject", color="orange",
-                    on_click=lambda k=key: _inject_scenario(k),
-                ).classes("mt-1").props("dense size=sm")
+                ui.label(f"cardholder_id: {sc['cardholder_id']}").classes("text-xs font-mono text-gray-500")
+                ui.button("💉 Inject", color="orange",
+                          on_click=lambda k=key: _inject(k)).props("dense size=sm").classes("mt-1")
 
         ui.separator().classes("bg-white/20 my-2")
-        if state["fraud_scenarios"]:
-            ui.label("Injected:").classes("text-white font-bold text-xs")
-            for s in state["fraud_scenarios"]:
-                ui.label(f"✅ {s}").classes("text-white/80 text-xs")
-        ui.button("🗑️ Clear Injected Data", on_click=_clear_scenarios,
-                  color="white").classes("mt-2").props("outline dense size=sm")
+        ui.button("🗑️ Clear All Injected Scenarios",
+                  on_click=_clear_injected, color="white").props("outline dense size=sm")
+        injected_label = ui.label("").classes("text-white/70 text-xs mt-1")
 
-    # ── Main content ──────────────────────────────────────────────────────
+    # ── Info columns: pipeline + memory ───────────────────────────────────
+    with ui.row().classes("w-full gap-4"):
+        with ui.column().classes("flex-grow"):
+            ui.label("Autonomous Investigation Pipeline:").classes("font-bold text-sm")
+            steps = [
+                ("1. Detect", "Scan transaction time-series for fraud scores ≥ 0.70, velocity anomalies"),
+                ("2. Investigate", "Cross-reference cardholder profile, geo-velocity impossible travel"),
+                ("3. Network Check", "$graphLookup to detect merchant fraud ring connections (depth ≤ 2)"),
+                ("4. External Verify", "FastMCP: OFAC sanctions screening, merchant risk check"),
+                ("5. Remediate", "FastMCP: Block card, send notification, file SAR if warranted"),
+                ("6. Report", "Generate structured investigation summary with all evidence"),
+            ]
+            for label, desc in steps:
+                ui.html(f'<div class="step-box"><strong>{label}</strong> — {desc}</div>')
+
+            ui.label("MCP Tools (mock external APIs):").classes("font-bold text-sm mt-2")
+            mcp_tools = ["screen_sanctions", "block_card", "send_notification", "file_sar", "merchant_risk_check"]
+            ui.html(" ".join(f'<span class="tool-badge-red">{t}</span>' for t in mcp_tools))
+
+        with ui.column().style("min-width:280px; max-width:360px"):
+            ui.html("""<div class="memory-box">
+              <strong>🧠 Memory Architecture</strong><br><br>
+              <strong>🧩 Episodic Memory</strong><br>
+              Each fraud investigation is stored in MongoDB with full audit trail.<br><br>
+              <strong>🔧 Procedural Memory</strong><br>
+              Fraud playbooks (CNP, ATO, money laundering) guide investigation steps.<br><br>
+              <strong>⚡ Working Memory</strong><br>
+              LangGraph <code>FraudAgentState</code> carries severity, actions_taken, fraud_type across reasoning steps.
+            </div>""")
+
+    # ── Blog feature callout ──────────────────────────────────────────────
+    ui.html("""<div class="info-section" style="border-left-color:#c0392b;">
+      <span class="blog-feature-tag bft-vector">🔵 Atlas Vector Search</span>
+      Fraud playbooks retrieved via <code>$vectorSearch</code> — semantic similarity.
+      &nbsp;&nbsp;
+      <span class="blog-feature-tag bft-ckpt">🟣 MongoDB Checkpointer</span>
+      LangGraph <code>FraudAgentState</code> persists across every reasoning step.
+      &nbsp;&nbsp;
+      <span class="blog-feature-tag bft-smith">🔴 LangSmith Observability</span>
+      Every tool call traced end-to-end.
+    </div>""")
+
+    ui.separator().classes("my-2")
+
+    # ── Controls ──────────────────────────────────────────────────────────
+    ui.label("🎯 Run Fraud Investigation").classes("text-xl font-bold mt-2")
+
+    mode = ui.radio(
+        ["🔍 Full Network Scan", "👤 Specific Cardholder"],
+        value="👤 Specific Cardholder",
+    ).props("inline")
+
+    # Build cardholder list: injected scenario IDs first, then defaults
+    injected_ids = [sc["cardholder_id"] for sc in FRAUD_SCENARIOS.values()]
+    default_ids = [f"CH_{i:04d}" for i in range(1, 21)]
+    all_ids = injected_ids + default_ids
+
     with ui.row().classes("w-full gap-2 items-end"):
-        ch_select = ui.select(
-            [f"CH_{i:04d}" for i in range(1, 16)],
-            value="CH_0005", label="Cardholder",
-        ).classes("w-48")
-        run_btn = ui.button("🚨 Run Fraud Analysis", color="red-8")
+        ch_select = ui.select(all_ids, value=all_ids[0], label="Select Cardholder:").classes("w-64")
+        ch_select.bind_visibility_from(mode, "value", value="👤 Specific Cardholder")
+        session_input = ui.input("Session ID:", value="fraud-session-1").classes("w-48")
 
-    status = ui.label("").classes("text-xs text-gray-500 mt-1")
-    result_box = ui.column().classes("w-full gap-2 mt-2")
+    with ui.row().classes("w-full gap-2 items-center"):
+        run_btn = ui.button("🚨 Launch Autonomous Investigation", color="red-8").classes("text-base font-bold")
+        warn_box = ui.column()
 
+    # Show warning when Full Scan is selected
+    def _update_warn():
+        warn_box.clear()
+        if mode.value == "🔍 Full Network Scan":
+            with warn_box:
+                ui.html('<div class="alert-red">⚠️ <strong>Full Scan Mode:</strong> Agent will '
+                        'autonomously investigate top-risk transactions and may block cards and '
+                        'file SARs (simulated).</div>')
+    mode.on_value_change(lambda: _update_warn())
 
-    # ── Handlers ──────────────────────────────────────────────────────────
+    result_box = ui.column().classes("w-full gap-2 mt-3")
+
+    # ── Run handler ───────────────────────────────────────────────────────
     async def _run_fraud():
-        cardholder = ch_select.value
-        status.text = f"🤖 Analysing {cardholder}…"
-        result_box.clear()
+        trigger = "scan" if mode.value == "🔍 Full Network Scan" else "cardholder"
+        cardholder = ch_select.value if trigger == "cardholder" else None
+
+        show_spinner(result_box,
+                     "🤖 VaultShield running autonomous fraud investigation…",
+                     f"Trigger: {trigger} | Cardholder: {cardholder or 'all'} | Session: {session_input.value}")
 
         try:
             from agents.fraud_agent import run_fraud_investigation
-            result = run_fraud_investigation(cardholder_id=cardholder)
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: run_fraud_investigation(
+                    trigger=trigger,
+                    cardholder_id=cardholder,
+                    session_id=session_input.value,
+                ),
+            )
         except Exception as e:
             logger.exception("Fraud agent error: %s", e)
-            result = {"answer": f"⚠️ Error: {e}", "tool_calls": []}
+            result = {"answer": f"⚠️ Error: {e}", "tool_calls": [], "messages": []}
 
-        state["fraud_result"] = result
+        result_box.clear()
         answer = result.get("answer", "") or "⚠️ Empty response."
         tools = result.get("tool_calls", [])
 
         with result_box:
-            ui.html(f'<div class="bubble-agent">🤖 <strong>Fraud Agent</strong>'
-                    f'<br>{answer}</div>')
-            if tools:
-                from nicegui_app.theme import render_tool_chips
-                render_tool_chips(tools)
+            # Investigation Report
+            ui.label("📋 Investigation Report").classes("text-lg font-bold")
+            render_answer_box(result_box, answer, css_class="answer-box-red")
 
-        status.text = f"✅ Done — {len(tools)} tools called"
+            # Categorised tool actions
+            if tools:
+                ui.label("🔧 Agent Actions Taken").classes("text-lg font-bold mt-3")
+                detect = [t for t in tools if any(w in t for w in ("transaction", "flagged", "velocity", "trend"))]
+                invest = [t for t in tools if any(w in t for w in ("profile", "merchant", "playbook"))]
+                action = [t for t in tools if any(w in t for w in ("mcp", "block", "sar", "notify", "sanction"))]
+                other  = [t for t in tools if t not in detect + invest + action]
+
+                with ui.row().classes("w-full gap-4"):
+                    with ui.column().classes("flex-1"):
+                        ui.label("🔍 Detection").classes("font-bold text-sm")
+                        for t in detect:
+                            ui.html(f'<div style="background:#d1fae5;padding:4px 8px;border-radius:4px;margin:2px;font-size:.82rem;">✓ {t}</div>')
+                    with ui.column().classes("flex-1"):
+                        ui.label("🔎 Investigation").classes("font-bold text-sm")
+                        for t in invest:
+                            ui.html(f'<div style="background:#dbeafe;padding:4px 8px;border-radius:4px;margin:2px;font-size:.82rem;">✓ {t}</div>')
+                    with ui.column().classes("flex-1"):
+                        ui.label("⚡ Actions").classes("font-bold text-sm")
+                        for t in action:
+                            ui.html(f'<div style="background:#fef3c7;padding:4px 8px;border-radius:4px;margin:2px;font-size:.82rem;">⚡ {t}</div>')
+                if other:
+                    render_tool_chips(other)
 
     run_btn.on_click(_run_fraud)
 
-    async def _inject_scenario(key: str):
+    # ── Scenario injection handlers ───────────────────────────────────────
+    async def _inject(key: str):
         try:
+            # Use the Streamlit page's inject_scenario which has the full data
+            from pages import _load_fraud_page_inject
+        except Exception:
+            pass
+        try:
+            from pymongo import MongoClient
+            from config import MONGODB_URI, MONGODB_DB_NAME
+            # Simple fallback: use seed_data if available
             from data.seed_data import inject_fraud_scenario
-            inject_fraud_scenario(key)
-            state["fraud_scenarios"].append(FRAUD_SCENARIOS[key]["label"])
-            ui.notify(f"Injected: {FRAUD_SCENARIOS[key]['label']}", type="positive")
+            inject_fraud_scenario(FRAUD_SCENARIOS[key]["id"])
+            ui.notify(f"Injected: {key}", type="positive")
         except Exception as e:
             ui.notify(f"Injection failed: {e}", type="negative")
 
-    async def _clear_scenarios():
-        state["fraud_scenarios"] = []
-        ui.notify("Cleared injected scenarios", type="info")
+    async def _clear_injected():
+        try:
+            from pymongo import MongoClient
+            from config import MONGODB_URI, MONGODB_DB_NAME
+            db = MongoClient(MONGODB_URI)[MONGODB_DB_NAME]
+            total = 0
+            for col in ("transactions", "cardholders", "merchant_networks"):
+                r = db[col].delete_many({"_injected_scenario": {"$exists": True}})
+                total += r.deleted_count
+            ui.notify(f"Cleared {total} injected documents", type="info")
+        except Exception as e:
+            ui.notify(f"Clear failed: {e}", type="negative")

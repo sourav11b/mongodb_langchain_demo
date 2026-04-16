@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
-from nicegui_app.theme import inject_css, page_header, render_chat_bubble
+from nicegui_app.theme import inject_css, page_header, render_chat_bubble, show_spinner
 
 logger = logging.getLogger("vaultiq.nicegui.discovery")
 
@@ -128,7 +128,12 @@ async def discovery_page():
         user_turn = {"role": "user", "content": q}
         state["msgs"].append(user_turn)
         render_chat_bubble(chat_box, user_turn)
-        status.text = "🤖 Agent reasoning…"
+
+        # Bold spinner
+        spinner_box = ui.column().classes("w-full")
+        show_spinner(spinner_box,
+                     "🤖 Agent reasoning…",
+                     "Querying MongoDB, running MCP tools, generating response…")
 
         try:
             from agents.metadata_agent import _run_with_mcp
@@ -140,6 +145,9 @@ async def discovery_page():
             logger.exception("Agent error: %s", e)
             result = {"answer": f"⚠️ Error: {e}", "tool_calls": [],
                       "mcp_tools_active": False, "fallback_reason": str(e)}
+
+        spinner_box.clear()
+        spinner_box.delete()
 
         answer = result.get("answer", "") or "⚠️ Empty response."
         if result.get("fallback_reason"):

@@ -7,7 +7,8 @@ import sys, os, logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from nicegui import ui, app
-from nicegui_app.theme import inject_css, page_header, render_tool_chips
+from nicegui_app.theme import (inject_css, page_header, render_tool_chips,
+                               show_spinner, render_answer_box)
 
 logger = logging.getLogger("vaultiq.nicegui.compliance")
 
@@ -94,26 +95,31 @@ async def compliance_page():
 
     # ── Handlers ──────────────────────────────────────────────────────────
     async def _run_compliance(cardholder: str, prompt: str | None):
-        status.text = f"🤖 Auditing {cardholder}…"
-        result_box.clear()
+        show_spinner(result_box,
+                     f"🤖 Auditing {cardholder}…",
+                     f"Check: {prompt or 'Full compliance audit'}")
 
         try:
+            import asyncio
             from agents.compliance_agent import run_compliance_investigation
-            result = run_compliance_investigation(
-                prompt=prompt, cardholder_id=cardholder,
+            result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: run_compliance_investigation(
+                    prompt=prompt, cardholder_id=cardholder,
+                ),
             )
         except Exception as e:
             logger.exception("Compliance error: %s", e)
             result = {"answer": f"⚠️ Error: {e}", "tool_calls": []}
 
+        result_box.clear()
         state["comp_result"] = result
         answer = result.get("answer", "") or "⚠️ Empty response."
         tools = result.get("tool_calls", [])
 
         with result_box:
-            ui.html(f'<div class="bubble-agent">🤖 <strong>Compliance Agent</strong>'
-                    f'<br>{answer}</div>')
-            render_tool_chips(tools)
+            ui.label("📋 Compliance Report").classes("text-lg font-bold")
+            render_answer_box(result_box, answer, tools=tools, css_class="answer-box-green")
 
         status.text = f"✅ Done — {len(tools)} tools called"
 
