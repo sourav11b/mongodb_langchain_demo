@@ -411,6 +411,152 @@ if run_btn:
             st.error(f"Agent error: {e}")
             st.info("Ensure .env is configured and MongoDB is seeded.")
 
+# ── Live Monitor — Change Stream Autonomous Agent ─────────────────────────────
+st.markdown("---")
+st.markdown("### 📡 Live Monitor — Real-Time Change Stream Agent")
+st.markdown("""
+<div class="blog-note">
+  <span class="blog-feature-tag bft-vector">🔵 Blog Feature: MongoDB Change Streams</span>
+  &nbsp; The agent watches the <code>transactions</code> collection in real-time via
+  <a href="https://www.mongodb.com/docs/manual/changeStreams/" target="_blank">Change Streams</a>.
+  When you inject a fraud scenario (sidebar), new documents trigger the agent autonomously —
+  <strong>no button press needed</strong>.
+</div>
+""", unsafe_allow_html=True)
+
+# Initialize monitor state
+if "fraud_monitor_running" not in st.session_state:
+    st.session_state.fraud_monitor_running = False
+if "fraud_monitor_events" not in st.session_state:
+    st.session_state.fraud_monitor_events = []
+if "fraud_monitor_obj" not in st.session_state:
+    st.session_state.fraud_monitor_obj = None
+
+col_m1, col_m2, col_m3 = st.columns([2, 2, 3])
+with col_m1:
+    if not st.session_state.fraud_monitor_running:
+        if st.button("▶️ Start Live Monitor", type="primary", key="start_fraud_monitor"):
+            try:
+                from tools.change_stream_monitor import ChangeStreamMonitor
+
+                def _fraud_change_callback(change_doc, db):
+                    """Called by the change-stream thread for each new/updated transaction."""
+                    full_doc = change_doc.get("fullDocument", {})
+                    op = change_doc.get("operationType", "?")
+                    cardholder_id = full_doc.get("cardholder_id", "unknown")
+                    fraud_score = full_doc.get("fraud_score", 0)
+                    amount = full_doc.get("amount", 0)
+                    is_flagged = full_doc.get("is_flagged", False)
+
+                    # Only investigate if it looks suspicious
+                    if fraud_score >= 0.5 or is_flagged:
+                        try:
+                            from agents.fraud_agent import run_fraud_investigation
+                            result = run_fraud_investigation(
+                                trigger="cardholder",
+                                cardholder_id=cardholder_id,
+                                session_id=f"live-{cardholder_id}",
+                            )
+                            return {
+                                "cardholder_id": cardholder_id,
+                                "fraud_score": fraud_score,
+                                "amount": amount,
+                                "operation": op,
+                                "answer": result.get("answer", ""),
+                                "tool_calls": result.get("tool_calls", []),
+                            }
+                        except Exception as e:
+                            return {
+                                "cardholder_id": cardholder_id,
+                                "fraud_score": fraud_score,
+                                "amount": amount,
+                                "operation": op,
+                                "error": str(e),
+                            }
+                    return {
+                        "cardholder_id": cardholder_id,
+                        "fraud_score": fraud_score,
+                        "amount": amount,
+                        "operation": op,
+                        "skipped": True,
+                        "reason": f"Below threshold (score={fraud_score:.2f}, flagged={is_flagged})",
+                    }
+
+                monitor = ChangeStreamMonitor(MONGODB_URI, MONGODB_DB_NAME)
+                monitor.watch(
+                    collection="transactions",
+                    pipeline=[{"$match": {"operationType": {"$in": ["insert", "update", "replace"]}}}],
+                    callback=_fraud_change_callback,
+                    label="fraud-live",
+                )
+                monitor.start()
+                st.session_state.fraud_monitor_obj = monitor
+                st.session_state.fraud_monitor_running = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to start monitor: {e}")
+    else:
+        if st.button("⏹️ Stop Live Monitor", key="stop_fraud_monitor"):
+            if st.session_state.fraud_monitor_obj:
+                st.session_state.fraud_monitor_obj.stop()
+            st.session_state.fraud_monitor_running = False
+            st.session_state.fraud_monitor_obj = None
+            st.rerun()
+
+with col_m2:
+    if st.session_state.fraud_monitor_running:
+        st.markdown("🟢 **Monitor ACTIVE** — watching `transactions`")
+        st.caption("Inject a scenario from the sidebar to see it in action →")
+    else:
+        st.markdown("⚪ Monitor stopped")
+
+with col_m3:
+    if st.session_state.fraud_monitor_running and st.button("🔄 Refresh Feed", key="refresh_fraud_feed"):
+        if st.session_state.fraud_monitor_obj:
+            new_events = st.session_state.fraud_monitor_obj.drain()
+            for ev in new_events:
+                st.session_state.fraud_monitor_events.insert(0, {
+                    "timestamp": ev.timestamp.strftime("%H:%M:%S"),
+                    "collection": ev.collection,
+                    "operation": ev.operation,
+                    "label": ev.label,
+                    "agent_result": ev.agent_result,
+                    "error": ev.error,
+                })
+            # Keep last 50
+            st.session_state.fraud_monitor_events = st.session_state.fraud_monitor_events[:50]
+
+# Display live event feed
+if st.session_state.fraud_monitor_events:
+    st.markdown("#### 📋 Live Agent Event Feed")
+    for i, ev in enumerate(st.session_state.fraud_monitor_events[:10]):
+        res = ev.get("agent_result", {}) or {}
+        ts = ev.get("timestamp", "?")
+        ch = res.get("cardholder_id", "?")
+        score = res.get("fraud_score", 0)
+        amt = res.get("amount", 0)
+
+        if res.get("skipped"):
+            st.markdown(f"""<div class="step-box">
+              <strong>⏰ {ts}</strong> | <code>{ev['operation']}</code> on <code>{ev['collection']}</code>
+              | Cardholder: <code>{ch}</code> | Score: {score:.2f} | ${amt:,.2f}
+              <br>⏭️ <em>Skipped — {res.get('reason','below threshold')}</em>
+            </div>""", unsafe_allow_html=True)
+        elif res.get("error"):
+            st.markdown(f"""<div class="alert-red">
+              <strong>⏰ {ts}</strong> | <code>{ev['operation']}</code> on <code>{ev['collection']}</code>
+              | ❌ Error: {res['error'][:200]}
+            </div>""", unsafe_allow_html=True)
+        elif res.get("answer"):
+            with st.expander(f"⏰ {ts} | 🚨 **{ch}** | Score: {score:.2f} | ${amt:,.2f} — Agent investigated", expanded=(i == 0)):
+                st.markdown(f'<div class="answer-box">{res["answer"][:1500]}</div>', unsafe_allow_html=True)
+                if res.get("tool_calls"):
+                    st.markdown("**Tools used:** " + ", ".join(f"`{t}`" for t in res["tool_calls"]))
+        elif ev.get("error"):
+            st.error(f"⏰ {ts} | Monitor error: {ev['error'][:200]}")
+elif st.session_state.fraud_monitor_running:
+    st.info("📡 Listening for changes… Inject a scenario from the sidebar, then click **🔄 Refresh Feed**.")
+
 # ── How it works ───────────────────────────────────────────────────────────────
 st.markdown("---")
 with st.expander("🏗️ Architecture — Fraud Agent Reasoning Graph"):

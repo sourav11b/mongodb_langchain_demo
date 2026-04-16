@@ -3,8 +3,11 @@ Page 4: AML & Compliance Intelligence — Autonomous Regulatory Agent
 """
 
 import streamlit as st
-import sys, os
+import sys, os, logging
+from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+logger = logging.getLogger("vaultiq.page.compliance")
 
 st.set_page_config(page_title="Compliance Agent | VaultIQ", page_icon="⚖️", layout="wide")
 
@@ -72,6 +75,119 @@ st.markdown("""
   </p>
 </div>
 """, unsafe_allow_html=True)
+
+# ── Compliance Scenario Injection (Sidebar) ───────────────────────────────────
+from pymongo import MongoClient
+from config import MONGODB_URI, MONGODB_DB_NAME
+import random
+
+_inject_db = MongoClient(MONGODB_URI)[MONGODB_DB_NAME]
+_INJECT_TAG = "_injected_scenario"
+
+COMPLIANCE_SCENARIOS = {
+    "💰 BSA Structuring — $9,900 Deposits": {
+        "id": "bsa_structuring",
+        "desc": "Insert 4 transactions at $9,900 each (just below the $10K CTR threshold) — classic structuring pattern.",
+        "cardholder_id": "CH_0005",
+        "transactions": lambda: [
+            {"transaction_id": f"TXN_BSA_STRUCT_{i:03d}", "cardholder_id": "CH_0005",
+             "amount": 9900 + random.randint(0, 50), "currency": "USD",
+             "timestamp": datetime.now(timezone.utc), "merchant_name": f"Bank Branch #{i}",
+             "category": "Financial Services", "is_flagged": False, "fraud_score": 0.3,
+             "status": "completed"} for i in range(4)
+        ],
+    },
+    "🌍 OFAC Sanctioned Country Transfer": {
+        "id": "ofac_sanction",
+        "desc": "Wire transfer to a sanctioned country (Iran). Should trigger OFAC screening.",
+        "cardholder_id": "CH_0008",
+        "transactions": lambda: [{
+            "transaction_id": "TXN_OFAC_WIRE_001", "cardholder_id": "CH_0008",
+            "amount": 25000, "currency": "USD",
+            "timestamp": datetime.now(timezone.utc), "merchant_name": "Int'l Wire Transfer",
+            "category": "Wire Transfer", "ip_country": "IR",
+            "is_flagged": True, "fraud_score": 0.85, "status": "pending_review",
+        }],
+    },
+    "🕸️ AML Layering Network": {
+        "id": "aml_layering",
+        "desc": "Circular transactions between 3 merchants — classic layering pattern detected by $graphLookup.",
+        "cardholder_id": "CH_0010",
+        "transactions": lambda: [
+            {"transaction_id": f"TXN_AML_LAYER_{i:03d}", "cardholder_id": "CH_0010",
+             "amount": 15000 + random.randint(0, 5000), "currency": "USD",
+             "timestamp": datetime.now(timezone.utc), "merchant_id": f"MERCH_SHELL_{i % 3:03d}",
+             "merchant_name": f"Shell Corp {chr(65 + i % 3)}", "category": "Business Services",
+             "is_flagged": True, "fraud_score": 0.72, "status": "completed"} for i in range(6)
+        ],
+        "merchant_networks": [
+            {"merchant_id": "MERCH_SHELL_000", "connected_to": "MERCH_SHELL_001", "relationship": "owner", "risk_tier": "high"},
+            {"merchant_id": "MERCH_SHELL_001", "connected_to": "MERCH_SHELL_002", "relationship": "subsidiary", "risk_tier": "high"},
+            {"merchant_id": "MERCH_SHELL_002", "connected_to": "MERCH_SHELL_000", "relationship": "vendor", "risk_tier": "high"},
+        ],
+    },
+    "📋 GDPR Data Retention Breach": {
+        "id": "gdpr_retention",
+        "desc": "Cardholder account closed 3+ years ago but transaction data still retained — GDPR violation.",
+        "cardholder_id": "CH_0012",
+        "transactions": lambda: [{
+            "transaction_id": "TXN_GDPR_OLD_001", "cardholder_id": "CH_0012",
+            "amount": 150, "currency": "EUR",
+            "timestamp": datetime(2021, 3, 15, tzinfo=timezone.utc),
+            "merchant_name": "Historic Merchant", "category": "Retail",
+            "is_flagged": False, "fraud_score": 0.1, "status": "completed",
+            "data_retention_flag": "expired",
+        }],
+    },
+}
+
+
+def inject_compliance_scenario(scenario_key: str) -> str:
+    sc = COMPLIANCE_SCENARIOS[scenario_key]
+    tag = sc["id"]
+    for col in ("transactions", "merchant_networks"):
+        _inject_db[col].delete_many({_INJECT_TAG: tag})
+    counts = {}
+    txn_fn = sc.get("transactions")
+    txns = txn_fn() if callable(txn_fn) else (txn_fn or [])
+    docs = [{**t, _INJECT_TAG: tag} for t in txns]
+    if docs:
+        _inject_db.transactions.insert_many(docs)
+        counts["transactions"] = len(docs)
+    nets = sc.get("merchant_networks", [])
+    net_docs = [{**n, _INJECT_TAG: tag} for n in nets]
+    if net_docs:
+        _inject_db.merchant_networks.insert_many(net_docs)
+        counts["merchant_networks"] = len(net_docs)
+    return f"✅ Injected: {', '.join(f'{c} {n}' for c, n in counts.items())}"
+
+
+def clear_compliance_scenarios():
+    total = 0
+    for col in ("transactions", "merchant_networks"):
+        r = _inject_db[col].delete_many({_INJECT_TAG: {"$exists": True}})
+        total += r.deleted_count
+    return f"Cleared {total} injected documents"
+
+
+with st.sidebar:
+    st.markdown("### ⚖️ Compliance Scenario Injection")
+    st.markdown(
+        "<small>Inject regulatory edge cases into MongoDB so the compliance "
+        "agent can detect and investigate them in real-time.</small>",
+        unsafe_allow_html=True,
+    )
+    for key, sc in COMPLIANCE_SCENARIOS.items():
+        with st.expander(key, expanded=False):
+            st.markdown(f"<small>{sc['desc']}</small>", unsafe_allow_html=True)
+            st.markdown(f"`cardholder_id`: `{sc['cardholder_id']}`")
+            if st.button(f"💉 Inject", key=f"inject_comp_{sc['id']}"):
+                msg = inject_compliance_scenario(key)
+                st.success(msg)
+    st.markdown("---")
+    if st.button("🗑️ Clear All Injected", key="clear_comp_scenarios"):
+        msg = clear_compliance_scenarios()
+        st.info(msg)
 
 # ── Overview ───────────────────────────────────────────────────────────────────
 col_info, col_mem = st.columns([2, 1])
@@ -225,6 +341,144 @@ with tab2:
                         st.markdown(f'<span class="tool-badge">⚖️ {tc}</span>', unsafe_allow_html=True)
             except Exception as e:
                 st.error(f"Error: {e}")
+
+# ── Live Monitor — Change Stream Compliance Agent ─────────────────────────────
+st.markdown("---")
+st.markdown("### 📡 Live Monitor — Real-Time Compliance Change Stream Agent")
+st.markdown("""
+<div class="blog-note" style="border-left-color:#8e44ad;">
+  <span class="blog-feature-tag bft-vector">🔵 Blog Feature: MongoDB Change Streams</span>
+  &nbsp; The compliance agent watches <code>transactions</code> via
+  <a href="https://www.mongodb.com/docs/manual/changeStreams/" target="_blank">Change Streams</a>.
+  When you inject a compliance scenario (sidebar), new documents trigger autonomous regulatory review —
+  threshold checks, OFAC screening, AML network analysis — <strong>no button press needed</strong>.
+</div>
+""", unsafe_allow_html=True)
+
+if "comp_monitor_running" not in st.session_state:
+    st.session_state.comp_monitor_running = False
+if "comp_monitor_events" not in st.session_state:
+    st.session_state.comp_monitor_events = []
+if "comp_monitor_obj" not in st.session_state:
+    st.session_state.comp_monitor_obj = None
+
+col_cm1, col_cm2, col_cm3 = st.columns([2, 2, 3])
+with col_cm1:
+    if not st.session_state.comp_monitor_running:
+        if st.button("▶️ Start Live Monitor", type="primary", key="start_comp_monitor"):
+            try:
+                from tools.change_stream_monitor import ChangeStreamMonitor
+
+                def _comp_change_callback(change_doc, db):
+                    full_doc = change_doc.get("fullDocument", {})
+                    op = change_doc.get("operationType", "?")
+                    cardholder_id = full_doc.get("cardholder_id", "unknown")
+                    amount = full_doc.get("amount", 0)
+                    category = full_doc.get("category", "")
+                    ip_country = full_doc.get("ip_country", "")
+
+                    try:
+                        from agents.compliance_agent import run_compliance_investigation
+                        prompt = (
+                            f"A new transaction was just recorded for cardholder {cardholder_id}: "
+                            f"${amount:,.2f} in category '{category}'"
+                        )
+                        if ip_country:
+                            prompt += f" from IP country '{ip_country}'"
+                        prompt += (
+                            ". Check if this triggers any compliance rules — BSA thresholds, "
+                            "OFAC sanctions, AML patterns. Take autonomous action if warranted."
+                        )
+                        result = run_compliance_investigation(
+                            prompt=prompt,
+                            cardholder_id=cardholder_id,
+                            session_id=f"live-comp-{cardholder_id}",
+                        )
+                        return {
+                            "cardholder_id": cardholder_id,
+                            "amount": amount,
+                            "category": category,
+                            "ip_country": ip_country,
+                            "operation": op,
+                            "answer": result.get("answer", ""),
+                            "tool_calls": result.get("tool_calls", []),
+                        }
+                    except Exception as e:
+                        return {
+                            "cardholder_id": cardholder_id,
+                            "amount": amount,
+                            "category": category,
+                            "operation": op,
+                            "error": str(e),
+                        }
+
+                monitor = ChangeStreamMonitor(MONGODB_URI, MONGODB_DB_NAME)
+                monitor.watch(
+                    collection="transactions",
+                    pipeline=[{"$match": {"operationType": {"$in": ["insert", "update", "replace"]}}}],
+                    callback=_comp_change_callback,
+                    label="compliance-live",
+                )
+                monitor.start()
+                st.session_state.comp_monitor_obj = monitor
+                st.session_state.comp_monitor_running = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to start monitor: {e}")
+    else:
+        if st.button("⏹️ Stop Live Monitor", key="stop_comp_monitor"):
+            if st.session_state.comp_monitor_obj:
+                st.session_state.comp_monitor_obj.stop()
+            st.session_state.comp_monitor_running = False
+            st.session_state.comp_monitor_obj = None
+            st.rerun()
+
+with col_cm2:
+    if st.session_state.comp_monitor_running:
+        st.markdown("🟢 **Monitor ACTIVE** — watching `transactions`")
+        st.caption("Inject a compliance scenario from the sidebar →")
+    else:
+        st.markdown("⚪ Monitor stopped")
+
+with col_cm3:
+    if st.session_state.comp_monitor_running and st.button("🔄 Refresh Feed", key="refresh_comp_feed"):
+        if st.session_state.comp_monitor_obj:
+            new_events = st.session_state.comp_monitor_obj.drain()
+            for ev in new_events:
+                st.session_state.comp_monitor_events.insert(0, {
+                    "timestamp": ev.timestamp.strftime("%H:%M:%S"),
+                    "collection": ev.collection,
+                    "operation": ev.operation,
+                    "agent_result": ev.agent_result,
+                    "error": ev.error,
+                })
+            st.session_state.comp_monitor_events = st.session_state.comp_monitor_events[:50]
+
+if st.session_state.comp_monitor_events:
+    st.markdown("#### 📋 Live Compliance Event Feed")
+    for i, ev in enumerate(st.session_state.comp_monitor_events[:10]):
+        res = ev.get("agent_result", {}) or {}
+        ts = ev.get("timestamp", "?")
+        ch = res.get("cardholder_id", "?")
+        amt = res.get("amount", 0)
+        cat = res.get("category", "?")
+        ip = res.get("ip_country", "")
+
+        if res.get("error"):
+            st.markdown(f"""<div class="alert-red" style="border-left-color:#8e44ad;">
+              <strong>⏰ {ts}</strong> | ❌ Error: {res['error'][:200]}
+            </div>""", unsafe_allow_html=True)
+        elif res.get("answer"):
+            label = f"⏰ {ts} | ⚖️ **{ch}** | ${amt:,.2f} {cat}"
+            if ip:
+                label += f" | 🌍 {ip}"
+            label += " — Compliance reviewed"
+            with st.expander(label, expanded=(i == 0)):
+                st.markdown(f'<div class="answer-box">{res["answer"][:1500]}</div>', unsafe_allow_html=True)
+                if res.get("tool_calls"):
+                    st.markdown("**Tools:** " + ", ".join(f"`{t}`" for t in res["tool_calls"]))
+elif st.session_state.comp_monitor_running:
+    st.info("📡 Listening for changes… Inject a compliance scenario from the sidebar, then click **🔄 Refresh Feed**.")
 
 # ── Compliance Rules Preview ───────────────────────────────────────────────────
 st.markdown("---")

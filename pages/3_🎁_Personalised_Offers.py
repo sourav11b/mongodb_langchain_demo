@@ -3,8 +3,11 @@ Page 3: Personalised Offers Concierge — Multi-Turn Chat Agent
 """
 
 import streamlit as st
-import sys, os
+import sys, os, logging
+from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+logger = logging.getLogger("vaultiq.page.offers")
 
 st.set_page_config(page_title="Personalised Offers | VaultIQ", page_icon="🎁", layout="wide")
 
@@ -67,6 +70,112 @@ st.markdown("""
   </p>
 </div>
 """, unsafe_allow_html=True)
+
+# ── Offer Scenario Injection (Sidebar) ────────────────────────────────────────
+from pymongo import MongoClient
+from config import MONGODB_URI, MONGODB_DB_NAME
+
+_inject_db = MongoClient(MONGODB_URI)[MONGODB_DB_NAME]
+_INJECT_TAG = "_injected_scenario"
+
+OFFER_SCENARIOS = {
+    "🎉 Flash Sale — Dining 3x Points": {
+        "id": "flash_dining",
+        "desc": "New flash offer: 3x Membership Rewards at all Restaurant merchants for 48 hours.",
+        "cardholder_id": "CH_0001",
+        "offers": [{
+            "offer_id": "OFFER_FLASH_DINING_001",
+            "merchant_name": "All Restaurant Partners",
+            "category": "Restaurant",
+            "description": "Flash Sale: Earn 3x Membership Rewards points at any Restaurant merchant for 48 hours only.",
+            "benefit_text": "3x points on dining — limited time flash sale",
+            "eligible_tiers": ["Green", "Gold", "Platinum", "Centurion"],
+            "valid_from": datetime.now(timezone.utc).isoformat(),
+            "offer_type": "flash_sale",
+        }],
+    },
+    "✈️ Travel Upgrade — Lounge Access": {
+        "id": "travel_lounge",
+        "desc": "New Centurion Lounge offer appears — exclusive airport access with Priority Pass.",
+        "cardholder_id": "CH_0003",
+        "offers": [{
+            "offer_id": "OFFER_TRAVEL_LOUNGE_001",
+            "merchant_name": "Centurion Lounge Network",
+            "category": "Travel",
+            "description": "Complimentary Centurion Lounge access at 45+ airports worldwide with Priority Pass.",
+            "benefit_text": "Free lounge access, complimentary food & drinks, spa discounts",
+            "eligible_tiers": ["Platinum", "Centurion"],
+            "valid_from": datetime.now(timezone.utc).isoformat(),
+            "offer_type": "premium_perk",
+        }],
+    },
+    "🛍️ Cashback Surge — Online Shopping": {
+        "id": "cashback_online",
+        "desc": "5% cashback on all online purchases over $50 for the next 7 days.",
+        "cardholder_id": "CH_0005",
+        "offers": [{
+            "offer_id": "OFFER_CASHBACK_ONLINE_001",
+            "merchant_name": "All Online Retailers",
+            "category": "Shopping",
+            "description": "Earn 5% cashback on all online purchases over $50. Valid for 7 days.",
+            "benefit_text": "5% cashback on online shopping — minimum $50 spend",
+            "eligible_tiers": ["Gold", "Platinum", "Centurion"],
+            "valid_from": datetime.now(timezone.utc).isoformat(),
+            "offer_type": "cashback_promo",
+        }],
+    },
+    "🏥 Wellness Reward — Gym & Spa": {
+        "id": "wellness_reward",
+        "desc": "New wellness partner offer: $20 statement credit at gym/spa merchants monthly.",
+        "cardholder_id": "CH_0002",
+        "offers": [{
+            "offer_id": "OFFER_WELLNESS_001",
+            "merchant_name": "Wellness Partner Network",
+            "category": "Health & Wellness",
+            "description": "$20 monthly statement credit when you spend $75+ at gym, spa, or wellness merchants.",
+            "benefit_text": "$20/month wellness credit — gym, spa, yoga, pilates",
+            "eligible_tiers": ["Platinum", "Centurion"],
+            "valid_from": datetime.now(timezone.utc).isoformat(),
+            "offer_type": "recurring_credit",
+        }],
+    },
+}
+
+
+def inject_offer_scenario(scenario_key: str) -> str:
+    sc = OFFER_SCENARIOS[scenario_key]
+    tag = sc["id"]
+    _inject_db.offers.delete_many({_INJECT_TAG: tag})
+    docs = [{**o, _INJECT_TAG: tag} for o in sc.get("offers", [])]
+    if docs:
+        _inject_db.offers.insert_many(docs)
+    return f"✅ Injected {len(docs)} offer(s) for scenario **{scenario_key}**"
+
+
+def clear_offer_scenarios():
+    r = _inject_db.offers.delete_many({_INJECT_TAG: {"$exists": True}})
+    return f"Cleared {r.deleted_count} injected offers"
+
+
+with st.sidebar:
+    st.markdown("### 🎁 Offer Scenario Injection")
+    st.markdown(
+        "<small>Inject new offers into MongoDB to see how the agent "
+        "discovers and recommends them in real-time.</small>",
+        unsafe_allow_html=True,
+    )
+    for key, sc in OFFER_SCENARIOS.items():
+        with st.expander(key, expanded=False):
+            st.markdown(f"<small>{sc['desc']}</small>", unsafe_allow_html=True)
+            st.markdown(f"`cardholder_id`: `{sc['cardholder_id']}`")
+            if st.button(f"💉 Inject", key=f"inject_offer_{sc['id']}"):
+                msg = inject_offer_scenario(key)
+                st.success(msg)
+
+    st.markdown("---")
+    if st.button("🗑️ Clear All Injected Offers", key="clear_offer_scenarios"):
+        msg = clear_offer_scenarios()
+        st.info(msg)
 
 col_config, col_mem = st.columns([2, 1])
 with col_config:
@@ -230,6 +339,132 @@ if st.button("🗑️ Clear Conversation"):
     st.session_state.offers_messages = []
     st.session_state.offers_tool_calls = []
     st.rerun()
+
+# ── Live Monitor — Change Stream for Offers ──────────────────────────────────
+st.markdown("---")
+st.markdown("### 📡 Live Monitor — Real-Time Offer Change Detection")
+st.markdown("""
+<div class="blog-note">
+  <span class="blog-feature-tag bft-vector">🔵 Blog Feature: MongoDB Change Streams</span>
+  &nbsp; The agent watches the <code>offers</code> collection via
+  <a href="https://www.mongodb.com/docs/manual/changeStreams/" target="_blank">Change Streams</a>.
+  When you inject a new offer scenario (sidebar), the agent automatically finds the best cardholder match
+  and generates a personalised recommendation — <strong>no button press needed</strong>.
+</div>
+""", unsafe_allow_html=True)
+
+if "offers_monitor_running" not in st.session_state:
+    st.session_state.offers_monitor_running = False
+if "offers_monitor_events" not in st.session_state:
+    st.session_state.offers_monitor_events = []
+if "offers_monitor_obj" not in st.session_state:
+    st.session_state.offers_monitor_obj = None
+
+col_om1, col_om2, col_om3 = st.columns([2, 2, 3])
+with col_om1:
+    if not st.session_state.offers_monitor_running:
+        if st.button("▶️ Start Live Monitor", type="primary", key="start_offers_monitor"):
+            try:
+                from tools.change_stream_monitor import ChangeStreamMonitor
+
+                def _offers_change_callback(change_doc, db):
+                    full_doc = change_doc.get("fullDocument", {})
+                    op = change_doc.get("operationType", "?")
+                    offer_id = full_doc.get("offer_id", "unknown")
+                    category = full_doc.get("category", "")
+                    description = full_doc.get("description", "")
+                    eligible = full_doc.get("eligible_tiers", [])
+
+                    try:
+                        from agents.offers_agent import run_offers_chat
+                        result = run_offers_chat(
+                            message=f"A new {category} offer just appeared: '{description}'. "
+                                    f"Tell me about this offer and who would benefit most from it.",
+                            cardholder_id="CH_0001",
+                            card_tier="Platinum",
+                            session_id=f"live-offer-{offer_id}",
+                        )
+                        return {
+                            "offer_id": offer_id,
+                            "category": category,
+                            "description": description[:200],
+                            "eligible_tiers": eligible,
+                            "operation": op,
+                            "answer": result.get("answer", ""),
+                            "tool_calls": result.get("tool_calls", []),
+                        }
+                    except Exception as e:
+                        return {
+                            "offer_id": offer_id,
+                            "category": category,
+                            "description": description[:200],
+                            "operation": op,
+                            "error": str(e),
+                        }
+
+                monitor = ChangeStreamMonitor(MONGODB_URI, MONGODB_DB_NAME)
+                monitor.watch(
+                    collection="offers",
+                    pipeline=[{"$match": {"operationType": {"$in": ["insert", "update", "replace"]}}}],
+                    callback=_offers_change_callback,
+                    label="offers-live",
+                )
+                monitor.start()
+                st.session_state.offers_monitor_obj = monitor
+                st.session_state.offers_monitor_running = True
+                st.rerun()
+            except Exception as e:
+                st.error(f"Failed to start monitor: {e}")
+    else:
+        if st.button("⏹️ Stop Live Monitor", key="stop_offers_monitor"):
+            if st.session_state.offers_monitor_obj:
+                st.session_state.offers_monitor_obj.stop()
+            st.session_state.offers_monitor_running = False
+            st.session_state.offers_monitor_obj = None
+            st.rerun()
+
+with col_om2:
+    if st.session_state.offers_monitor_running:
+        st.markdown("🟢 **Monitor ACTIVE** — watching `offers`")
+        st.caption("Inject an offer scenario from the sidebar →")
+    else:
+        st.markdown("⚪ Monitor stopped")
+
+with col_om3:
+    if st.session_state.offers_monitor_running and st.button("🔄 Refresh Feed", key="refresh_offers_feed"):
+        if st.session_state.offers_monitor_obj:
+            new_events = st.session_state.offers_monitor_obj.drain()
+            for ev in new_events:
+                st.session_state.offers_monitor_events.insert(0, {
+                    "timestamp": ev.timestamp.strftime("%H:%M:%S"),
+                    "collection": ev.collection,
+                    "operation": ev.operation,
+                    "agent_result": ev.agent_result,
+                    "error": ev.error,
+                })
+            st.session_state.offers_monitor_events = st.session_state.offers_monitor_events[:50]
+
+if st.session_state.offers_monitor_events:
+    st.markdown("#### 📋 Live Offer Agent Feed")
+    for i, ev in enumerate(st.session_state.offers_monitor_events[:10]):
+        res = ev.get("agent_result", {}) or {}
+        ts = ev.get("timestamp", "?")
+        offer_id = res.get("offer_id", "?")
+        cat = res.get("category", "?")
+        desc = res.get("description", "")
+
+        if res.get("error"):
+            st.markdown(f"""<div class="alert-red" style="border-left-color:#e74c3c;">
+              <strong>⏰ {ts}</strong> | ❌ Error processing offer {offer_id}: {res['error'][:200]}
+            </div>""", unsafe_allow_html=True)
+        elif res.get("answer"):
+            with st.expander(f"⏰ {ts} | 🎁 **{cat}** — {offer_id} — Agent matched", expanded=(i == 0)):
+                st.markdown(f"**Offer:** {desc}")
+                st.markdown(f'<div class="chat-agent">{res["answer"][:1500]}</div>', unsafe_allow_html=True)
+                if res.get("tool_calls"):
+                    st.markdown("**Tools:** " + ", ".join(f"`{t}`" for t in res["tool_calls"]))
+elif st.session_state.offers_monitor_running:
+    st.info("📡 Listening for new offers… Inject a scenario from the sidebar, then click **🔄 Refresh Feed**.")
 
 st.markdown("---")
 with st.expander("🔍 How Offer Matching Works"):
