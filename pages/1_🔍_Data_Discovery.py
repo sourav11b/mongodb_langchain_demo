@@ -61,9 +61,23 @@ st.markdown("""
     border-left:3px solid #27ae60;
   }
   .bubble-context {
-    background:#FFF8E7; border-radius:8px;
-    padding:.6rem 1rem; margin:.4rem 8%;
-    border-left:3px solid #B5A06A; font-size:.85rem; color:#555;
+    background:#f5f0ff; border-radius:10px;
+    padding:.8rem 1.1rem; margin:.5rem 4%;
+    border-left:4px solid #8e44ad; font-size:.85rem; color:#444;
+  }
+  .mem-recall-hit {
+    background:linear-gradient(135deg,#f5f0ff,#ede9fe); border:2px solid #c4b5fd;
+    border-radius:10px; padding:1rem 1.2rem; margin:.5rem 0;
+  }
+  .mem-recall-hit .mem-title { color:#5b21b6; font-weight:800; font-size:.95rem; }
+  .mem-recall-hit .mem-detail { color:#555; font-size:.82rem; margin-top:.3rem; }
+  .mem-recall-miss {
+    background:#f8fafc; border:1px solid #e2e8f0;
+    border-radius:10px; padding:.7rem 1rem; margin:.5rem 0; font-size:.82rem; color:#888;
+  }
+  .mem-speedup {
+    background:#d1fae5; color:#065f46; border-radius:8px;
+    padding:.4rem .8rem; font-weight:700; display:inline-block; font-size:.82rem;
   }
   .mem-card {
     background:#fff; border:1px solid #d5e8f7; border-radius:10px;
@@ -228,6 +242,8 @@ EXAMPLE_QUERIES = [
     ("🕸️ Graph Traverse", "Traverse the merchant network graph for merchant MER_0001 to depth 2"),
     # 📍 Geospatial → geo_query_nearby_merchants
     ("📍 Geo Query", "Find Restaurant merchants within 5km of Canary Wharf London (longitude: -0.0235, latitude: 51.5054)"),
+    # 🧠 Semantic Memory recall
+    ("🧠 Memory Recall", "What fraud-related datasets have I explored before, and what were the key findings?"),
 ]
 
 # ── Quick-start prompts (only when chat is empty) ──────────────────────────────
@@ -239,13 +255,70 @@ if not st.session_state.disco_messages:
             st.session_state["_disco_auto_send"] = eq
             st.rerun()
 
+    # Semantic memory explainer
+    st.markdown("""
+<div class="blog-note" style="border-left-color:#8e44ad; margin-top:1rem;">
+  <span class="blog-feature-tag" style="background:#ede9fe; color:#5b21b6; border-color:#c4b5fd;">🧠 Semantic Memory Demo</span>
+  &nbsp; <strong>How it works:</strong>
+  <ol style="margin:.4rem 0 0; font-size:.82rem; padding-left:1.2rem;">
+    <li>Have a conversation → explore data, run queries, find insights</li>
+    <li>Click <strong>💾 End Session & Store Memory</strong> → LLM distills the conversation, Voyage AI embeds it, stored in <code>session_memories</code></li>
+    <li>Start a <strong>new session</strong> and ask a related question → the agent recalls past findings via <strong>Atlas Vector Search</strong> and answers faster, citing what it already knows</li>
+  </ol>
+  <p style="margin:.4rem 0 0; font-size:.82rem;">Try <strong>🧠 Memory Recall</strong> after you've ended at least one session to see it in action.</p>
+</div>
+""", unsafe_allow_html=True)
+
 # ── Render existing chat bubbles ───────────────────────────────────────────────
-for turn in st.session_state.disco_messages:
+for _turn_idx, turn in enumerate(st.session_state.disco_messages):
     if turn["role"] == "context":
-        st.markdown(
-            f'<div class="bubble-context">📚 <em>{turn["content"][:200]}…</em></div>',
-            unsafe_allow_html=True,
-        )
+        _recall_ms = turn.get("recall_ms", "?")
+        _mem_count = turn.get("memories_found", 0)
+        _mem_details = turn.get("memory_details", [])
+        _score_str = ""
+        if _mem_details and _mem_details[0].get("score"):
+            _score_str = f' · Top relevance: <code>{_mem_details[0]["score"]}</code>'
+        st.markdown(f"""
+<div class="mem-recall-hit">
+  <div class="mem-title">🧠 Semantic Memory Recall — {_mem_count} past session(s) found</div>
+  <div class="mem-detail">
+    Vector search on <code>session_memories</code> completed in
+    <span class="mem-speedup">{_recall_ms}ms</span>{_score_str}
+  </div>
+  <div class="mem-detail" style="margin-top:.3rem;">
+    The agent now has context from previous conversations and can answer faster
+    by reusing past findings instead of re-running queries.
+  </div>
+</div>
+""", unsafe_allow_html=True)
+        if _mem_details:
+            with st.expander(f"📚 View {len(_mem_details)} recalled memories (injected as agent context)", expanded=False):
+                for _md in _mem_details:
+                    st.markdown(f"""
+**{_md['memory_id']}** · {_md['timestamp']} · {_md['turns']} turns · Score: `{_md.get('score', '?')}`
+
+> {_md['summary'][:300]}
+
+**Collections explored:** {', '.join(_md.get('datasets', [])) or '—'}
+""")
+                    if _md.get("insights"):
+                        st.markdown("**Key insights recalled:**")
+                        for _ins in _md["insights"][:4]:
+                            st.markdown(f"- {_ins}")
+                    if _md.get("queries"):
+                        st.markdown("**Past queries recalled:**")
+                        for _qr in _md["queries"][:3]:
+                            st.markdown(f"- `{_qr}`")
+                    st.markdown("---")
+    elif turn["role"] == "context_miss":
+        _recall_ms = turn.get("recall_ms", "?")
+        st.markdown(f"""
+<div class="mem-recall-miss">
+  🧠 Semantic Memory — no relevant past sessions found
+  <span style="float:right;">{_recall_ms}ms</span><br>
+  <small>End a session (💾) after exploring data to build up memory for future recall.</small>
+</div>
+""", unsafe_allow_html=True)
     elif turn["role"] == "user":
         st.markdown(
             f'<div class="bubble-human">🧑 <strong>You</strong><br>{turn["content"]}</div>',
@@ -309,13 +382,46 @@ if question_raw:
     sms = SessionMemoryStore("metadata_agent")
 
     # ── On first turn: retrieve relevant past session memories ────────────────
+    import time as _time
     memory_ctx_msg = None
     if not st.session_state.disco_mem_injected and st.session_state.disco_lc_history == []:
+        _mem_t0 = _time.time()
         memory_ctx_msg = sms.build_memory_context_message(question, limit=2)
+        _mem_elapsed = round((_time.time() - _mem_t0) * 1000)
+
+        # Also get raw memories for display
+        _raw_memories = sms.retrieve_relevant_memories(question, limit=2)
+        _mem_count = len(_raw_memories)
+
         if memory_ctx_msg:
+            # Build rich memory recall info
+            _mem_sessions = []
+            for m in _raw_memories:
+                ts = m.get("created_at", "")
+                if hasattr(ts, "strftime"):
+                    ts = ts.strftime("%b %d %H:%M UTC")
+                _mem_sessions.append({
+                    "memory_id": m.get("memory_id", "?"),
+                    "timestamp": ts,
+                    "turns": m.get("turn_count", "?"),
+                    "summary": m.get("summary", ""),
+                    "datasets": m.get("datasets_explored", []),
+                    "insights": m.get("key_insights", []),
+                    "queries": m.get("queries_run", []),
+                    "score": round(m.get("relevance_score", 0), 4),
+                })
             st.session_state.disco_messages.append({
                 "role": "context",
                 "content": memory_ctx_msg.content,
+                "recall_ms": _mem_elapsed,
+                "memories_found": _mem_count,
+                "memory_details": _mem_sessions,
+            })
+        else:
+            st.session_state.disco_messages.append({
+                "role": "context_miss",
+                "content": f"No relevant past sessions found ({_mem_elapsed}ms vector search). Starting fresh.",
+                "recall_ms": _mem_elapsed,
             })
         st.session_state.disco_mem_injected = True
 
