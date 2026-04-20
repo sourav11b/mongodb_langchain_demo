@@ -242,9 +242,22 @@ EXAMPLE_QUERIES = [
     ("🕸️ Graph Traverse", "Traverse the merchant network graph for merchant MER_0001 to depth 2"),
     # 📍 Geospatial → geo_query_nearby_merchants
     ("📍 Geo Query", "Find Restaurant merchants within 5km of Canary Wharf London (longitude: -0.0235, latitude: 51.5054)"),
-    # 🧠 Semantic Memory recall
-    ("🧠 Memory Recall", "What fraud-related datasets have I explored before, and what were the key findings?"),
 ]
+
+# ── Semantic Memory demo prompts ──────────────────────────────────────────────
+# Step 1: Complex multi-tool query (MCP + hybrid search + aggregation)
+MEMORY_PROMPT_STEP1 = (
+    "Find all fraud-related datasets in the catalog using hybrid search, then inspect the "
+    "fraud_cases collection schema, show me the top 5 fraud cases by severity with their "
+    "merchant names and transaction amounts, and check if any merchants in those cases are "
+    "connected in the merchant network graph"
+)
+# Step 2: Semantically similar but different wording — should recall Step 1 results
+MEMORY_PROMPT_STEP2 = (
+    "What do we know about fraud data in our system? Which collections have fraud info, "
+    "what does the schema look like, what are the most severe cases, and are the merchants "
+    "linked to each other?"
+)
 
 # ── Quick-start prompts (only when chat is empty) ──────────────────────────────
 if not st.session_state.disco_messages:
@@ -255,19 +268,45 @@ if not st.session_state.disco_messages:
             st.session_state["_disco_auto_send"] = eq
             st.rerun()
 
-    # Semantic memory explainer
+    # ── Semantic Memory guided demo ───────────────────────────────────────────
+    st.markdown("---")
     st.markdown("""
-<div class="blog-note" style="border-left-color:#8e44ad; margin-top:1rem;">
-  <span class="blog-feature-tag" style="background:#ede9fe; color:#5b21b6; border-color:#c4b5fd;">🧠 Semantic Memory Demo</span>
-  &nbsp; <strong>How it works:</strong>
-  <ol style="margin:.4rem 0 0; font-size:.82rem; padding-left:1.2rem;">
-    <li>Have a conversation → explore data, run queries, find insights</li>
-    <li>Click <strong>💾 End Session & Store Memory</strong> → LLM distills the conversation, Voyage AI embeds it, stored in <code>session_memories</code></li>
-    <li>Start a <strong>new session</strong> and ask a related question → the agent recalls past findings via <strong>Atlas Vector Search</strong> and answers faster, citing what it already knows</li>
-  </ol>
-  <p style="margin:.4rem 0 0; font-size:.82rem;">Try <strong>🧠 Memory Recall</strong> after you've ended at least one session to see it in action.</p>
+<div class="mem-recall-hit" style="background:linear-gradient(135deg,#faf5ff,#ede9fe);">
+  <div class="mem-title" style="font-size:1rem;">🧠 Semantic Memory Demo — See How Past Sessions Make the Agent Faster</div>
+  <div class="mem-detail" style="margin-top:.5rem;">
+    Two prompts, same question asked differently. The first triggers <strong>4+ tool calls</strong>
+    (hybrid search → schema inspect → MQL query → graph traverse). The second recalls the stored
+    memory and answers <strong>instantly from past findings</strong> — no tool calls needed.
+  </div>
 </div>
 """, unsafe_allow_html=True)
+
+    step1_col, step2_col = st.columns(2)
+    with step1_col:
+        st.markdown("""
+**Step 1 — Complex query (run this first):**
+
+This triggers hybrid search, schema inspection, MQL aggregation, and graph traversal — the agent
+makes **4+ MCP/tool calls** to gather all the data.
+""")
+        st.code(MEMORY_PROMPT_STEP1, language=None)
+        if st.button("🚀 Run Step 1 (complex query)", key="mem_step1", use_container_width=True, type="primary"):
+            st.session_state["_disco_auto_send"] = MEMORY_PROMPT_STEP1
+            st.rerun()
+        st.caption("After the answer appears → click **💾 End Session & Store Memory** → then **🗑️ Clear Chat**")
+
+    with step2_col:
+        st.markdown("""
+**Step 2 — Similar question (run after ending session):**
+
+Same question, different wording. The agent recalls the past session via
+**Atlas Vector Search** on `session_memories` and answers from memory — **no tool calls**.
+""")
+        st.code(MEMORY_PROMPT_STEP2, language=None)
+        if st.button("🧠 Run Step 2 (memory recall)", key="mem_step2", use_container_width=True, type="secondary"):
+            st.session_state["_disco_auto_send"] = MEMORY_PROMPT_STEP2
+            st.rerun()
+        st.caption("Watch for the purple **🧠 Semantic Memory Recall** banner showing what was recalled")
 
 # ── Render existing chat bubbles ───────────────────────────────────────────────
 for _turn_idx, turn in enumerate(st.session_state.disco_messages):
