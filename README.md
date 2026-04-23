@@ -9,7 +9,7 @@ This showcase demonstrates every key feature of the **`langchain-mongodb`** pack
 
 ## 📑 Pages
 
-The app consists of **9 pages** — a home page plus 8 functional pages:
+The app consists of **10 pages** — a home page plus 9 functional pages:
 
 | # | Page | What It Does |
 |---|------|-------------|
@@ -22,6 +22,7 @@ The app consists of **9 pages** — a home page plus 8 functional pages:
 | 6 | **🗄️ Database Agent** | Natural-language database queries using `MongoDBDatabaseToolkit`. Auto-discovers schemas, generates MQL, validates with query checker, executes — shows generated MQL and full agent trace |
 | 7 | **🕸️ Knowledge Graph** | Builds a knowledge graph from unstructured text using `MongoDBGraphStore` with LLM entity extraction. Query with `MongoDBGraphRAGRetriever` for multi-hop answers via `$graphLookup` traversal |
 | 8 | **🍃 LangChain MongoDB** | Live showcase of **all 10 `langchain-mongodb` modules** — each with a runnable demo, code snippet, scores, and raw results (see below) |
+| 9 | **🔗 Unified Pipeline** | Single aggregate query combining `$rankFusion` (hybrid search), `$geoWithin` (geo filter), `$lookup` (time-series transaction stats), and `$graphLookup` (merchant network traversal) — results reranked by Voyage AI `rerank-2` |
 
 ---
 
@@ -161,7 +162,8 @@ Build a knowledge graph from unstructured financial text, then query it with mul
 │   ├── 5_⚙️_Setup_&_Data.py        # Setup, seeding, Atlas status
 │   ├── 6_🗄️_Database_Agent.py      # Use Case 5 — NL database queries
 │   ├── 7_🕸️_Knowledge_Graph.py     # Use Case 6 — GraphRAG agent
-│   └── 8_🍃_LangChain_MongoDB.py   # All 10 langchain-mongodb modules
+│   ├── 8_🍃_LangChain_MongoDB.py   # All 10 langchain-mongodb modules
+│   └── 9_🔗_Unified_Pipeline.py   # 4-feature aggregate + Voyage reranker
 ├── agents/
 │   ├── data_discovery_agent.py     # P1 agent with MCP + hybrid search
 │   ├── fraud_agent.py              # P2 autonomous fraud detection
@@ -173,7 +175,8 @@ Build a knowledge graph from unstructured financial text, then query it with mul
 │   ├── mcp_client.py               # MongoDB MCP Server client
 │   ├── fraud_tools.py              # Fraud detection tools
 │   ├── compliance_tools.py         # Compliance/OFAC tools
-│   └── langchain_mongodb_showcase.py  # P8 demo functions
+│   ├── langchain_mongodb_showcase.py  # P8 demo functions
+│   └── unified_pipeline.py          # P9 unified aggregate + Voyage reranker
 ├── data/
 │   └── seed_data.py                # Seed data + vector/FTS index creation
 ├── embeddings/
